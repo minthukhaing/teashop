@@ -1,0 +1,17 @@
+# ၁။ Folder ကို Git repository အဖြစ် စတင်သတ်မှတ်ခြင်း
+git init
+
+# ၂။ Folder ထဲရှိ ဖိုင်အားလုံးကို Git သို့ ထည့်သွင်းရန် အသင့်ပြင်ခြင်း
+git add .
+
+# ၃။ ဖိုင်များကို မှတ်တမ်း (commit) တင်ခြင်း
+git commit -m "Initial commit"
+
+# ၄။ ပင်မ branch နာမည်ကို main ဟု သတ်မှတ်ခြင်း
+git branch -M main
+
+# ၅။ ကွန်ပျူတာထဲက Git နှင့် GitHub ပေါ်ရှိ repository ကို ချိတ်ဆက်ခြင်း
+git remote add origin https://github.com/<သင်၏-username>/<သင်၏-repo-name>.git
+
+# ၆။ Code များကို GitHub ပေါ်သို့ တင်ပို့ခြင်း
+git push -u origin main
