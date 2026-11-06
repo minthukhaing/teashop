@@ -57,7 +57,7 @@ Widget appButton({
                 valueColor: AlwaysStoppedAnimation(Colors.white),
               ),
             )
-          : Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          : Text(label, style: AppFonts.style(fontSize: 16, fontWeight: FontWeight.w600)),
     ),
   );
 }
@@ -76,7 +76,7 @@ Widget appOutlineButton({
         side: const BorderSide(color: AppColors.primary),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      child: Text(label, style: AppFonts.style(fontSize: 16, fontWeight: FontWeight.w600)),
     ),
   );
 }
@@ -132,7 +132,7 @@ Widget statusChip(String status) {
     ),
     child: Text(
       label,
-      style: TextStyle(
+      style: AppFonts.style(
         color: color,
         fontSize: 12,
         fontWeight: FontWeight.bold,

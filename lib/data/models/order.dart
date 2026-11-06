@@ -3,6 +3,7 @@ library teashop_pos.data.models.order;
 import 'package:json_annotation/json_annotation.dart';
 
 import 'date_time_converter.dart';
+import '../../core/utils/myanmar_text.dart';
 import '../../core/constants/app_constants.dart';
 import 'order_item.dart';
 
@@ -37,14 +38,17 @@ class Order {
   final List<OrderItem> items;
 
   /// Column-friendly map for SQLite (snake_case keys), without nested items.
+  /// Column-friendly map for SQLite (snake_case keys).
+  ///
+  /// Free-text fields are normalised to Unicode **NFC** (see [MyanmarText]).
   Map<String, Object?> toMap() {
     return {
       'id': id,
-      'table_number': tableNumber,
+      'table_number': MyanmarText.normalize(tableNumber),
       'status': status,
       'total': total,
-      'customer_name': customerName,
-      'notes': notes,
+      'customer_name': MyanmarText.normalizeNullable(customerName),
+      'notes': MyanmarText.normalizeNullable(notes),
       'created_at': createdAt?.toIso8601String(),
     };
   }
@@ -52,11 +56,11 @@ class Order {
   factory Order.fromMap(Map<String, Object?> map) {
     return Order(
       id: map['id'] as int?,
-      tableNumber: map['table_number'] as String,
+      tableNumber: MyanmarText.normalize(map['table_number'] as String),
       status: map['status'] as String,
       total: (map['total'] as num).toDouble(),
-      customerName: map['customer_name'] as String?,
-      notes: map['notes'] as String?,
+      customerName: MyanmarText.normalizeNullable(map['customer_name'] as String?),
+      notes: MyanmarText.normalizeNullable(map['notes'] as String?),
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),
     );
   }

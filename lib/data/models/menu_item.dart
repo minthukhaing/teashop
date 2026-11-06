@@ -2,6 +2,7 @@ library teashop_pos.data.models.menu_item;
 
 import 'package:json_annotation/json_annotation.dart';
 
+import '../../core/utils/myanmar_text.dart';
 import 'date_time_converter.dart';
 
 part 'menu_item.g.dart';
@@ -32,13 +33,17 @@ class MenuItem {
   final DateTime? createdAt;
 
   /// Column-friendly map for SQLite (snake_case keys).
+  ///
+  /// All free-text fields are normalised to Unicode **NFC** so the database
+  /// stores one canonical form – required for correct Myanmar rendering
+  /// (Asat/Virama stacking) and reliable `LIKE` searches.
   Map<String, Object?> toMap() {
     return {
       'id': id,
-      'name': name,
-      'description': description,
+      'name': MyanmarText.normalize(name),
+      'description': MyanmarText.normalizeNullable(description),
       'price': price,
-      'category': category,
+      'category': MyanmarText.normalize(category),
       'available': available ? 1 : 0,
       'image_url': imageUrl,
       'created_at': createdAt?.toIso8601String(),
@@ -48,10 +53,10 @@ class MenuItem {
   factory MenuItem.fromMap(Map<String, Object?> map) {
     return MenuItem(
       id: map['id'] as int?,
-      name: map['name'] as String,
-      description: map['description'] as String?,
+      name: MyanmarText.normalize(map['name'] as String),
+      description: MyanmarText.normalizeNullable(map['description'] as String?),
       price: (map['price'] as num).toDouble(),
-      category: map['category'] as String,
+      category: MyanmarText.normalize(map['category'] as String),
       available: (map['available'] as int?)?.toInt() == 1,
       imageUrl: map['image_url'] as String?,
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),

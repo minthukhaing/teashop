@@ -64,8 +64,10 @@ dependencies:
   # Date/time formatting for receipts and display.
   intl: ^0.20.3
 
-  # Google Fonts - provides Noto Sans Myanmar (Unicode Myanmar glyphs).
-  google_fonts: ^6.2.1
+  # Unicode normalization (NFC/NFD/NFKC/NFKD) – ensures Myanmar text stored in
+  # SQLite and rendered in the UI is always in composed (NFC) form, which is
+  # required for correct Asat/Virama stacking and consistent LIKE matching.
+  unorm_dart: ^0.3.3
 
 dev_dependencies:
   flutter_test:
@@ -106,6 +108,19 @@ flutter:
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
+
+  # Custom Myanmar Unicode fonts, bundled locally so the POS renders Myanmar
+  # text correctly offline (no runtime download). `Pyidaungsu` is the primary
+  # family applied globally via ThemeData; `NotoSansMyanmar` is a fallback for
+  # any glyph Pyidaungsu lacks. See fonts/README.md for sources & licensing.
+  fonts:
+    - family: Pyidaungsu
+      fonts:
+        - asset: fonts/Pyidaungsu-Regular.ttf
+    - family: NotoSansMyanmar
+      fonts:
+        - asset: fonts/NotoSansMyanmar-Regular.ttf
+
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

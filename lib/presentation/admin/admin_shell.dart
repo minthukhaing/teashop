@@ -615,5 +615,3 @@ class _KitchenPlaceholder extends StatelessWidget {
     );
   }
 }
-
-}

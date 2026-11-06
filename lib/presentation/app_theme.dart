@@ -1,7 +1,6 @@
 library teashop_pos.presentation.app_theme;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 // ─────────────────────────── Color Palettes ───────────────────────────────────
 
@@ -31,38 +30,53 @@ class AdminColors {
 
 // ─────────────────────────── Myanmar Font Helper ──────────────────────────────
 
-/// Myanmar Unicode font – Noto Sans Myanmar from Google Fonts.
-/// Use [AppFonts.myanmar] as the [fontFamily] in [TextStyle]s, or rely on
-/// [appTheme] which applies it globally via [ThemeData.textTheme].
+/// Myanmar Unicode font configuration.
+///
+/// `Pyidaungsu` (bundled in `fonts/`, declared in `pubspec.yaml`) is the
+/// primary family applied globally via [ThemeData.fontFamily]; `NotoSansMyanmar`
+/// is a fallback for any glyph Pyidaungsu lacks. Because both files are bundled
+/// locally the POS renders Myanmar text correctly offline – no runtime font
+/// download. Use [AppFonts.style] for one-off [TextStyle]s, or simply rely on
+/// [appTheme] which applies the font to every [Text] widget through the Material
+/// [TextTheme].
 class AppFonts {
   AppFonts._();
 
-  /// Returns a [TextTheme] where every style uses Noto Sans Myanmar,
-  /// merged on top of the base theme's text styles.
-  static TextTheme myanmarTextTheme([TextTheme? base]) =>
-      GoogleFonts.notoSansMyanmarTextTheme(base);
+  /// Primary Myanmar Unicode font family (declared in `pubspec.yaml`).
+  static const String primaryFamily = 'Pyidaungsu';
 
-  /// Single [TextStyle] with Noto Sans Myanmar – handy for one-off overrides.
+  /// Fallback families tried when [primaryFamily] lacks a glyph.
+  static const List<String> fallbackFamilies = ['NotoSansMyanmar'];
+
+  /// A [TextStyle] using the bundled Myanmar font. Handy for one-off overrides
+  /// where a widget sets an explicit style that would otherwise drop the
+  /// inherited theme font.
   static TextStyle style({
     double? fontSize,
     FontWeight? fontWeight,
     Color? color,
     double? height,
     double? letterSpacing,
+    TextOverflow? overflow,
   }) =>
-      GoogleFonts.notoSansMyanmar(
+      TextStyle(
+        fontFamily: primaryFamily,
+        fontFamilyFallback: fallbackFamilies,
         fontSize: fontSize,
         fontWeight: fontWeight,
         color: color,
         height: height,
         letterSpacing: letterSpacing,
+        overflow: overflow,
       );
 }
 
 // ─────────────────────────── App Theme ───────────────────────────────────────
 
-/// Full [ThemeData] for the Teashop POS app with Noto Sans Myanmar applied
-/// globally so every [Text] widget renders Myanmar glyphs correctly.
+/// Full [ThemeData] for the Teashop POS app with the bundled Myanmar Unicode
+/// font (Pyidaungsu, fallback Noto Sans Myanmar) applied globally so every
+/// [Text] widget renders Myanmar glyphs correctly – including correct Asat /
+/// Virama stacking – without any per-widget font configuration.
 ThemeData appTheme() {
   // Build the base colour scheme first.
   final cs = ColorScheme.fromSeed(
@@ -73,19 +87,18 @@ ThemeData appTheme() {
     error: AppColors.error,
   );
 
-  // Merge Myanmar font into the Material text theme.
-  final baseTextTheme = ThemeData(colorScheme: cs).textTheme;
-  final myanmarTextTheme = AppFonts.myanmarTextTheme(baseTextTheme);
-
-  return ThemeData(
+  // Build the base theme with the Myanmar font applied globally. Setting
+  // [ThemeData.fontFamily] / [ThemeData.fontFamilyFallback] propagates the
+  // font to every style in `textTheme` & `primaryTextTheme`, so all [Text]
+  // widgets inherit correct Myanmar rendering through [DefaultTextStyle].
+  final base = ThemeData(
     useMaterial3: true,
     colorScheme: cs,
+    fontFamily: AppFonts.primaryFamily,
+    fontFamilyFallback: AppFonts.fallbackFamilies,
+  );
 
-    // ── Global Myanmar font ─────────────────────────────────────────────────
-    textTheme: myanmarTextTheme,
-    primaryTextTheme: AppFonts.myanmarTextTheme(
-        ThemeData(colorScheme: cs).primaryTextTheme),
-
+  return base.copyWith(
     // ── App Bar ─────────────────────────────────────────────────────────────
     appBarTheme: AppBarTheme(
       centerTitle: true,

@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 import '../../core/auth/password_hasher.dart';
 import '../../core/auth/waiter_permissions.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/myanmar_text.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_item.dart';
@@ -254,6 +255,9 @@ class AppDatabase {
     _seed(batch, 'Ginger Lemon Tea', 'Refreshing herbal infusion', 3.00, 'Beverages', now);
     _seed(batch, 'Veg Sandwich', 'Grilled vegetable sandwich with cheese', 5.50, 'Snacks', now);
     _seed(batch, 'Chocolate Muffin', 'Freshly baked chocolate muffin', 4.00, 'Bakery', now);
+    // Myanmar-language sample items – demonstrate full Unicode rendering.
+    _seed(batch, 'လက်ဖက်ရည်', 'အိမ်လုပ် လက်ဖက်ရည်', 1.50, 'လက်ဖက်ရည်', now);
+    _seed(batch, 'ကော်ဖီ', 'ပူနွေးသော ကော်ဖီ', 2.00, 'Beverages', now);
     await batch.commit(noResult: true);
   }
 
@@ -266,10 +270,10 @@ class AppDatabase {
     String now,
   ) {
     batch.insert('menu_items', {
-      'name': name,
-      'description': desc,
+      'name': MyanmarText.normalize(name),
+      'description': MyanmarText.normalizeNullable(desc),
       'price': price,
-      'category': category,
+      'category': MyanmarText.normalize(category),
       'available': 1,
       'created_at': now,
       'updated_at': now,
@@ -305,7 +309,7 @@ class AppDatabase {
 
   Future<List<MenuItem>> searchMenuItems(String query) async {
     final database = await db;
-    final like = '%${query.trim()}%';
+    final like = '%${MyanmarText.normalize(query.trim())}%';
     final maps = await database.query(
       'menu_items',
       where: 'name LIKE ? OR category LIKE ? OR description LIKE ?',

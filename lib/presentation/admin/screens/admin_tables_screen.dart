@@ -38,7 +38,10 @@ class _AdminTablesScreenState extends State<AdminTablesScreen> {
         map[i] = null;
       }
       for (final o in activeOrders) {
-        map[o.tableNumber] = o;
+        final table = int.tryParse(o.tableNumber);
+        if (table != null && map.containsKey(table)) {
+          map[table] = o;
+        }
       }
       setState(() {
         _tableOrders = map;
