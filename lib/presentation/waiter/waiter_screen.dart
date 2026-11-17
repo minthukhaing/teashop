@@ -1,4 +1,4 @@
-library teashop_pos.presentation.waiter.waiter_screen;
+﻿library teashop_pos.presentation.waiter.waiter_screen;
 
 import 'package:flutter/material.dart';
 
@@ -8,11 +8,37 @@ import '../../core/constants/app_constants.dart';
 import '../../data/models/menu_item.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_item.dart';
+import '../../printer/bluetooth_printer_service.dart';
+import '../../printer/printer_dialog.dart';
 import '../app_mode.dart';
 import '../app_theme.dart';
 import '../common_widgets.dart';
 import '../responsive_helpers.dart';
+import '../voucher_screen.dart';
+import 'edit_order_screen.dart';
 import 'waiter_login_screen.dart';
+
+/// Minimalist circular "+" action button used by the menu list rows.
+class _AddButton extends StatelessWidget {
+  const _AddButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: IconButton(
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        splashRadius: 18,
+        tooltip: 'Add to order',
+        icon: const Icon(Icons.add, size: 20, color: AppColors.success),
+      ),
+    );
+  }
+}
 
 class WaiterScreen extends StatefulWidget {
   const WaiterScreen({super.key});
@@ -27,11 +53,37 @@ class _WaiterScreenState extends State<WaiterScreen> {
 
   List<MenuItem> _menu = [];
   final Map<int, OrderItem> _cart = {};
-  bool _loading = false;
+  bool _menuLoading = false;
   String? _error;
 
   List<Order> _orders = [];
   bool _ordersLoading = false;
+
+  /// Index of the currently selected bottom navigation tab.
+  int _currentIndex = 0;
+
+  /// Id of the order card currently expanded to show its item details.
+  int? _expandedOrderId;
+
+  /// The table the waiter is currently taking an order for.
+  String? _selectedTable;
+
+  /// Currently selected category filter on the Menu/Parcel tabs
+  /// (`null` means "All").
+  String? _selectedCategory;
+
+  /// True when the Parcel (takeaway) tab is active.
+  bool get _isParcelMode => _currentIndex == 3;
+
+  /// Number of tables shown on the Tables tab.
+  static const int _tableCount = 12;
+
+  /// Statuses that mean a table is still occupied by an active order.
+  static const List<String> _activeStatuses = [
+    AppConstants.statusPending,
+    AppConstants.statusPreparing,
+    AppConstants.statusReady,
+  ];
 
   @override
   void initState() {
@@ -57,7 +109,7 @@ class _WaiterScreenState extends State<WaiterScreen> {
     AppConfig.instance.resetApi();
 
     setState(() {
-      _loading = true;
+      _menuLoading = true;
       _error = null;
     });
 
@@ -67,7 +119,7 @@ class _WaiterScreenState extends State<WaiterScreen> {
       setState(() {
         _error = 'Cannot reach admin host at $ip:${AppConstants.serverPort}. '
             'Make sure the admin server is running.';
-        _loading = false;
+        _menuLoading = false;
       });
       return;
     }
@@ -77,7 +129,7 @@ class _WaiterScreenState extends State<WaiterScreen> {
 
   Future<void> _loadMenu() async {
     setState(() {
-      _loading = true;
+      _menuLoading = true;
       _error = null;
     });
     try {
@@ -85,13 +137,13 @@ class _WaiterScreenState extends State<WaiterScreen> {
       if (!mounted) return;
       setState(() {
         _menu = items;
-        _loading = false;
+        _menuLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = 'Cannot reach admin host. Check the IP address.';
-        _loading = false;
+        _menuLoading = false;
       });
     }
   }
@@ -137,6 +189,42 @@ class _WaiterScreenState extends State<WaiterScreen> {
       _cart.values.fold(0, (sum, item) => sum + item.quantity);
   double get _cartTotal =>
       _cart.values.fold(0.0, (sum, item) => sum + item.price * item.quantity);
+
+  /// True when an order can be submitted: parcel orders always can, table
+  /// orders require a selected table without an active order.
+  bool get canTakeNewOrder {
+    if (_isParcelMode) return true;
+    if (_selectedTable == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please select a table first (Tables tab).')),
+      );
+      return false;
+    }
+    if (_hasActiveOrder(_selectedTable!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content:
+                Text('Table $_selectedTable already has an active order.')),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /// Whether [table] currently has a pending/preparing/ready order.
+  bool _hasActiveOrder(String table) => _orders.any(
+      (o) => o.tableNumber == table && _activeStatuses.contains(o.status));
+
+  /// The latest active order for [table], if any.
+  Order? _activeOrderFor(String table) {
+    final matches =
+        _orders.where((o) => o.tableNumber == table && _activeStatuses.contains(o.status)).toList();
+    if (matches.isEmpty) return null;
+    matches.sort((a, b) => (b.createdAt ?? DateTime(2000))
+        .compareTo(a.createdAt ?? DateTime(2000)));
+    return matches.first;
+  }
 
   Map<String, List<MenuItem>> get _groupedMenu {
     final grouped = <String, List<MenuItem>>{};
@@ -245,7 +333,7 @@ class _WaiterScreenState extends State<WaiterScreen> {
                             label: 'Send to Kitchen',
                             onPressed: () {
                               Navigator.pop(context);
-                              _submitOrder();
+                              if (canTakeNewOrder) _submitOrder();
                             },
                           ),
                         ],
@@ -262,10 +350,12 @@ class _WaiterScreenState extends State<WaiterScreen> {
 
   Future<void> _submitOrder() async {
     if (_cart.isEmpty) return;
+    if (!canTakeNewOrder) return;
     final order = Order(
-      tableNumber: 'T1',
+      tableNumber: _isParcelMode ? 'Parcel' : _selectedTable!,
       status: AppConstants.statusPending,
       total: _cartTotal,
+      waiterName: WaiterAuth.instance.displayNameOrUsername,
       items: _cart.values.toList(),
       createdAt: DateTime.now(),
     );
@@ -287,16 +377,30 @@ class _WaiterScreenState extends State<WaiterScreen> {
   Future<void> _loadOrders() async {
     setState(() => _ordersLoading = true);
     try {
-      final orders = await AppConfig.instance.api.fetchOrders();
+      // Only fetch ACTIVE orders whose bill has not been paid/cleared yet
+      // (pending / preparing / ready).  Served and cancelled orders are
+      // excluded server-side via the `unpaid=true` filter.
+      final orders = await AppConfig.instance.api.fetchOrders(unpaidOnly: true);
       if (!mounted) return;
       setState(() {
         _orders = orders;
+        if (_expandedOrderId != null &&
+            !_orders.any((o) => o.id == _expandedOrderId)) {
+          _expandedOrderId = null;
+        }
         _ordersLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _ordersLoading = false);
     }
+  }
+
+  /// Toggles the expanded (item-details) state of an order card.
+  void _toggleOrderExpanded(Order order) {
+    setState(() {
+      _expandedOrderId = _expandedOrderId == order.id ? null : order.id;
+    });
   }
 
   Future<void> _cancelOrder(Order order) async {
@@ -316,6 +420,80 @@ class _WaiterScreenState extends State<WaiterScreen> {
     }
   }
 
+  /// Opens the dedicated full-screen Edit Order screen (no popup): quantity
+  /// steppers on the existing line items, per-item delete, plus a menu picker
+  /// to add new items.  Saving PUTs the updated order to the Admin Host, which
+  /// recomputes the total.  When the screen reports changes, the unpaid orders
+  /// list is reloaded.
+  Future<void> _editOrder(Order order) async {
+    if (!WaiterAuth.instance.can(WaiterPermissions.takeOrders)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('You do not have permission to edit orders.')),
+      );
+      return;
+    }
+
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditOrderScreen(
+          order: order,
+          menu: _menu,
+          canDelete: WaiterAuth.instance.can(WaiterPermissions.cancelOrders),
+        ),
+      ),
+    );
+    if (changed == true) {
+      await _loadOrders();
+    }
+  }
+
+  /// Deletes an unpaid order (with confirmation) before it is closed.
+  Future<void> _deleteOrder(Order order) async {
+    if (!WaiterAuth.instance.can(WaiterPermissions.cancelOrders)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('You do not have permission to delete orders.')),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete Order #${order.id}?'),
+        content: Text(
+            'This will permanently remove the unpaid order for table '
+            '${order.tableNumber} (${order.itemCount} items, '
+            '${formatKyat(order.total)}). This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep Order'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await AppConfig.instance.api.deleteOrder(order.id!);
+      await _loadOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Order #${order.id} deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete order: $e')),
+      );
+    }
+  }
+
   void _logout() {
     WaiterAuth.instance.logout();
     Navigator.of(context).pushReplacement(
@@ -328,135 +506,251 @@ class _WaiterScreenState extends State<WaiterScreen> {
     final bp = breakpointOfContext(context);
     final auth = WaiterAuth.instance;
     final canTakeOrders = auth.can(WaiterPermissions.takeOrders);
-    final canViewOrders = auth.can(WaiterPermissions.viewOrders);
     final canCancelOrders = auth.can(WaiterPermissions.cancelOrders);
-    final tabs = <Tab>[
-      const Tab(text: 'Menu'),
-      if (canViewOrders) const Tab(text: 'Orders'),
+
+    // Bottom navigation items: Tables, Menu, Orders and Parcel.
+    final items = <BottomNavigationBarItem>[
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.table_restaurant_outlined),
+        activeIcon: Icon(Icons.table_restaurant),
+        label: 'Tables',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.restaurant_menu_outlined),
+        activeIcon: Icon(Icons.restaurant_menu),
+        label: 'Menu',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.receipt_long_outlined),
+        activeIcon: Icon(Icons.receipt_long),
+        label: 'Orders',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.shopping_bag_outlined),
+        activeIcon: Icon(Icons.shopping_bag),
+        label: 'Parcel',
+      ),
     ];
-    return DefaultTabController(
-      length: tabs.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(auth.isLoggedIn ? auth.displayNameOrUsername : 'Waiter'),
-          actions: [
-            if (canTakeOrders && _cartCount > 0)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilledButton.icon(
-                  onPressed: _openCart,
-                  icon: const Icon(Icons.shopping_cart),
-                  label: Text('$_cartCount'),
-                ),
+
+    // Keep the index in range.
+    if (_currentIndex >= items.length) _currentIndex = 0;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(auth.isLoggedIn ? auth.displayNameOrUsername : 'Waiter'),
+        actions: [
+          if (_selectedTable != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Chip(
+                avatar: const Icon(Icons.table_restaurant, size: 16),
+                label: Text('Table $_selectedTable'),
+                visualDensity: VisualDensity.compact,
               ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout',
-              onPressed: _logout,
+            ),
+          if (canTakeOrders && _cartCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilledButton.icon(
+                onPressed: _openCart,
+                icon: const Icon(Icons.shopping_cart),
+                label: Text('$_cartCount'),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+            onPressed: _logout,
+          ),
+        ],
+      ),
+      body: Container(
+        color: Colors.white,
+        child: Column(
+          children: [
+            _ipBar(),
+            if (_error != null) _errorView(),
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: [
+                  _tablesView(context, bp),
+                  _menuView(context, bp),
+                  _ordersView(context, canCancelOrders),
+                  _menuView(context, bp, parcel: true),
+                ],
+              ),
             ),
           ],
-          bottom: canViewOrders ? TabBar(tabs: tabs) : null,
         ),
-        body: GradientBackground(
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        items: items,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppColors.success, // green active tab
+        unselectedItemColor: const Color(0xFF1A237E), // dark blue inactive
+        selectedLabelStyle: const TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontSize: 12),
+      ),
+    );
+  }
+
+  /// Grid of tables. Occupied tables (active order) are highlighted and show
+  /// their order status; tapping an occupied table opens its order sheet.
+  Widget _tablesView(BuildContext context, Breakpoint bp) {
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      child: ResponsiveGrid(
+        compact: 3,
+        medium: 4,
+        expanded: 6,
+        large: 8,
+        childAspectRatio: 1.0,
+        itemCount: _tableCount,
+        itemBuilder: (context, i) {
+          final table = 'T${i + 1}';
+          final activeOrder = _activeOrderFor(table);
+          final isSelected = _selectedTable == table;
+          final isOccupied = activeOrder != null;
+          final canTakeOrders =
+              WaiterAuth.instance.can(WaiterPermissions.takeOrders);
+          final canViewOrders =
+              WaiterAuth.instance.can(WaiterPermissions.viewOrders);
+          return _tableCard(
+            table: table,
+            isSelected: isSelected,
+            isOccupied: isOccupied,
+            status: activeOrder?.status,
+            orderTotal: activeOrder?.total,
+            onTap: (canTakeOrders || canViewOrders)
+                ? () {
+                    if (isOccupied) {
+                      if (canViewOrders) {
+                        _showTableOrderSheet(table);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content:
+                                  Text('Table $table has an active order.')),
+                        );
+                      }
+                      return;
+                    }
+                    if (!canTakeOrders) return;
+                    setState(() {
+                      _selectedTable = table;
+                      _currentIndex = 1; // jump to Menu
+                    });
+                  }
+                : null,
+          );
+        },
+      ),
+    );
+  }
+
+  /// Opens a bottom sheet listing the orders placed at [table], with each
+  /// order's line items and the payment (total) breakdown.
+  void _showTableOrderSheet(String table) {
+    final tableOrders = _orders.where((o) => o.tableNumber == table).toList()
+      ..sort((a, b) => (b.createdAt ?? DateTime(2000))
+          .compareTo(a.createdAt ?? DateTime(2000)));
+    if (tableOrders.isEmpty) return;
+    final canCancelOrders =
+        WaiterAuth.instance.can(WaiterPermissions.cancelOrders);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+          ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _ipBar(),
-              if (_error != null) _errorView(),
-              Expanded(
-                child: canViewOrders
-                    ? TabBarView(
-                        children: [
-                          _menuView(context, bp),
-                          _ordersView(context, canCancelOrders),
-                        ],
-                      )
-                    : _menuView(context, bp),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.table_restaurant,
+                        color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text('Table $table — Orders & Payment',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  itemCount: tableOrders.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) =>
+                      _tableOrderCard(tableOrders[i], canCancelOrders),
+                ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _ipBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: AppColors.surfaceCream,
-      child: Row(
-        children: [
-          const Icon(Icons.dns, size: 18, color: AppColors.muted),
-          const SizedBox(width: 8),
-          const Text('Admin Host IP',
-              style: TextStyle(fontSize: 13, color: AppColors.muted)),
-          const Spacer(),
-          SizedBox(
-            width: 140,
-            child: appTextField(
-              context: context,
-              label: 'IP',
-              controller: _ipController,
-              keyboardType: TextInputType.number,
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _connect),
-        ],
-      ),
-    );
-  }
-
-  Widget _errorView() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: AppColors.error.withOpacity(0.1),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: AppColors.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(_error!,
-                style: const TextStyle(color: AppColors.error, fontSize: 13)),
-          ),
-          TextButton(onPressed: _loadMenu, child: const Text('Retry')),
-        ],
-      ),
-    );
-  }
-
-  Widget _ordersView(BuildContext context, bool canCancelOrders) {
-    if (_ordersLoading && _orders.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_orders.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.receipt_long, size: 48, color: AppColors.muted),
-            SizedBox(height: 12),
-            Text('No orders yet.'),
-          ],
-        ),
+  /// Opens the guided Bluetooth printer workflow (scan -> connect -> print)
+  /// for [order]'s payment receipt.
+  /// Opens the voucher/bill preview, fetching shop settings from the Admin
+  /// Host (shop name/address + Gov Tax %).
+  Future<void> _openVoucher(Order order) async {
+    try {
+      final settings = await AppConfig.instance.api.fetchShopSettings();
+      if (!mounted) return;
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => VoucherScreen(order: order, settings: settings),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load shop settings: $e')),
       );
     }
-    return RefreshIndicator(
-      onRefresh: _loadOrders,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _orders.length,
-        itemBuilder: (context, i) => _orderTile(_orders[i], canCancelOrders),
+  }
+
+  void _printReceipt(Order order) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => PrinterDialog(
+        printer: BluetoothPrinterService.instance,
+        order: order,
       ),
     );
   }
 
-  Widget _orderTile(Order order, bool canCancelOrders) {
+  /// One order inside the table sheet: header, line items and payment summary.
+  Widget _tableOrderCard(Order order, bool canCancelOrders) {
     final canCancel = canCancelOrders &&
         order.status != AppConstants.statusServed &&
         order.status != AppConstants.statusCancelled;
     return Card(
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -464,137 +758,526 @@ class _WaiterScreenState extends State<WaiterScreen> {
             Row(
               children: [
                 CircleAvatar(
+                  radius: 14,
                   backgroundColor: AppColors.primary.withOpacity(0.1),
                   child: Text('#${order.id}',
                       style: const TextStyle(fontSize: 11)),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Table ${order.tableNumber}',
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      Text(
-                        '${order.createdAt != null ? AppConfig.instance.dateFormat.format(order.createdAt!) : "--:--"}  •  ${order.itemCount} items  •  ${formatMoney(order.total)}',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.muted),
-                      ),
-                    ],
+                  child: Text(
+                    order.createdAt != null
+                        ? AppConfig.instance.dateFormat.format(order.createdAt!)
+                        : '--:--',
+                    style: const TextStyle(fontSize: 12, color: AppColors.muted),
                   ),
                 ),
                 statusChip(order.status),
               ],
             ),
-            if (canCancel)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _cancelOrder(order),
-                    icon: const Icon(Icons.cancel_outlined,
-                        color: AppColors.error),
-                    label: const Text('Cancel',
-                        style: TextStyle(color: AppColors.error)),
+            const Divider(height: 16),
+            if (order.items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No items recorded.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 13)),
+              )
+            else
+              for (final item in order.items)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('${item.quantity} × ${item.name}',
+                            style: const TextStyle(fontSize: 13)),
+                      ),
+                      Text(formatMoney(item.subtotal),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
                   ),
                 ),
+            const Divider(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('${order.itemCount} items',
+                    style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+                ),
+                const Text('Payment: ',
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.muted,
+                        fontWeight: FontWeight.w600)),
+                Text(formatMoney(order.total),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.success)),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 4,
+                  children: [
+                    if (WaiterAuth.instance.can(WaiterPermissions.takeOrders))
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _editOrder(order);
+                        },
+                        icon: const Icon(Icons.edit_outlined,
+                            color: AppColors.primary),
+                        label: const Text('Edit',
+                            style: TextStyle(color: AppColors.primary)),
+                      ),
+                    if (canCancel)
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _deleteOrder(order);
+                        },
+                        icon: const Icon(Icons.delete_outline,
+                            color: AppColors.error),
+                        label: const Text('Delete',
+                            style: TextStyle(color: AppColors.error)),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => _openVoucher(order),
+                      icon: const Icon(Icons.receipt_long_outlined,
+                          color: AppColors.primary),
+                      label: const Text('Voucher',
+                          style: TextStyle(color: AppColors.primary)),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _printReceipt(order),
+                      icon: const Icon(Icons.print,
+                          color: AppColors.primary),
+                      label: const Text('Print Receipt',
+                          style: TextStyle(color: AppColors.primary)),
+                    ),
+                    if (canCancel)
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _cancelOrder(order);
+                        },
+                        icon: const Icon(Icons.cancel_outlined,
+                            color: AppColors.error),
+                        label: const Text('Cancel',
+                            style: TextStyle(color: AppColors.error)),
+                      ),
+                  ],
+                ),
               ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _menuView(BuildContext context, Breakpoint bp) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+  /// Orders tab: list of ACTIVE unpaid orders. Tapping a card opens the
+  /// full-screen Edit Order screen; the expand icon toggles item details.
+  Widget _ordersView(BuildContext context, bool canCancelOrders) {
+    if (_ordersLoading && _orders.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final orders = _orders;
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      child: orders.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 80),
+                Icon(Icons.receipt_long_outlined,
+                    size: 64, color: AppColors.muted),
+                SizedBox(height: 16),
+                Center(
+                    child: Text('No active orders',
+                        style: TextStyle(color: AppColors.muted))),
+                SizedBox(height: 8),
+                Center(
+                    child: Text('All unpaid orders will appear here',
+                        style: TextStyle(
+                            color: AppColors.muted, fontSize: 12))),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: orders.length,
+              itemBuilder: (context, i) {
+                final order = orders[i];
+                final isExpanded = _expandedOrderId == order.id;
+                final canCancel = canCancelOrders &&
+                    order.status != AppConstants.statusServed &&
+                    order.status != AppConstants.statusCancelled;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    children: [
+                      // Tappable header -> full-screen Edit Order screen.
+                      InkWell(
+                        onTap: () => _editOrder(order),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor:
+                                    AppColors.primary.withOpacity(0.1),
+                                child: Text('#${order.id}',
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      order.tableNumber,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    Text(
+                                      order.createdAt != null
+                                          ? AppConfig.instance.dateFormat
+                                              .format(order.createdAt!)
+                                          : '--:--',
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.muted),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(formatMoney(order.total),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.success)),
+                                  Text('${order.itemCount} items',
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.muted)),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              statusChip(order.status),
+                              const SizedBox(width: 4),
+                              // Expand/collapse item details.
+                              IconButton(
+                                icon: Icon(
+                                  isExpanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  color: AppColors.muted,
+                                ),
+                                onPressed: () => _toggleOrderExpanded(order),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (isExpanded)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                          child: Column(
+                            children: [
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                              for (final item in order.items)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                            '${item.quantity} × ${item.name}',
+                                            style:
+                                                const TextStyle(fontSize: 13)),
+                                      ),
+                                      Text(formatMoney(item.subtotal),
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600)),
+                                    ],
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  if (canCancel)
+                                    TextButton.icon(
+                                      onPressed: () => _deleteOrder(order),
+                                      icon: const Icon(Icons.delete_outline,
+                                          color: AppColors.error),
+                                      label: const Text('Delete',
+                                          style: TextStyle(
+                                              color: AppColors.error)),
+                                    ),
+                                  TextButton.icon(
+                                    onPressed: () => _openVoucher(order),
+                                    icon: const Icon(
+                                        Icons.receipt_long_outlined,
+                                        color: AppColors.primary),
+                                    label: const Text('Voucher',
+                                        style: TextStyle(
+                                            color: AppColors.primary)),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => _printReceipt(order),
+                                    icon: const Icon(Icons.print,
+                                        color: AppColors.primary),
+                                    label: const Text('Print Receipt',
+                                        style: TextStyle(
+                                            color: AppColors.primary)),
+                                  ),
+                                  if (canCancel)
+                                    TextButton.icon(
+                                      onPressed: () => _cancelOrder(order),
+                                      icon: const Icon(Icons.cancel_outlined,
+                                          color: AppColors.error),
+                                      label: const Text('Cancel',
+                                          style: TextStyle(
+                                              color: AppColors.error)),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  /// Menu tab (also reused for Parcel). Shows categories and menu items with
+  /// add-to-cart buttons; when a table is selected the cart bar is shown.
+  Widget _menuView(BuildContext context, Breakpoint bp, {bool parcel = false}) {
+    if (_menuLoading && _menu.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_menu.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.restaurant_menu, size: 48, color: AppColors.muted),
-            const SizedBox(height: 12),
-            const Text('No menu items available.'),
+            const Text('No menu items yet.',
+                style: TextStyle(color: AppColors.muted)),
             const SizedBox(height: 8),
-            ElevatedButton(onPressed: _loadMenu, child: const Text('Retry')),
+            TextButton(onPressed: _loadMenu, child: const Text('Retry')),
           ],
         ),
       );
     }
-    final grouped = _groupedMenu;
-    final categories = grouped.keys.toList()..sort();
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        final category = categories[index];
-        final items = grouped[category]!;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            sectionTitle(context, category),
-            const SizedBox(height: 8),
-            ResponsiveGrid(
-              compact: 2,
-              medium: 3,
-              expanded: 4,
-              large: 5,
-              childAspectRatio: 1.0,
-              shrinkWrap: true,
-              itemCount: items.length,
-              itemBuilder: (context, i) => _menuItemCard(items[i]),
-            ),
-            const SizedBox(height: 16),
-          ],
-        );
-      },
+    final categories = _selectedCategory == null
+        ? _groupedMenu.keys.toList()
+        : [_selectedCategory!];
+    return Column(
+      children: [
+        // Category chips
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            children: [
+              ChoiceChip(
+                label: const Text('All'),
+                selected: _selectedCategory == null,
+                onSelected: (_) => setState(() => _selectedCategory = null),
+              ),
+              const SizedBox(width: 6),
+              for (final cat in _groupedMenu.keys)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(cat),
+                    selected: _selectedCategory == cat,
+                    onSelected: (_) => setState(() => _selectedCategory = cat),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _menuLoading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+                  itemCount: categories.length,
+                  itemBuilder: (context, i) {
+                    final cat = categories[i];
+                    final items = _groupedMenu[cat]!;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+                          child: Text(cat,
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                        for (final item in items)
+                          ListTile(
+                            leading: item.imageUrl != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      item.imageUrl!,
+                                      width: 48,
+                                      height: 48,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          const Icon(Icons.fastfood),
+                                    ),
+                                  )
+                                : const Icon(Icons.fastfood),
+                            title: Text(item.name),
+                            subtitle: Text(formatMoney(item.price)),
+                            trailing: _AddButton(
+                              onPressed: () => _addToCart(item),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
-  Widget _menuItemCard(MenuItem item) {
+  /// A single table tile in the tables grid.
+  Widget _tableCard({
+    required String table,
+    required bool isSelected,
+    required bool isOccupied,
+    String? status,
+    double? orderTotal,
+    VoidCallback? onTap,
+  }) {
+    final statusColor = status == null
+        ? Colors.transparent
+        : status == AppConstants.statusReady
+            ? AppColors.success
+            : status == AppConstants.statusPreparing
+                ? Colors.orange
+                : AppColors.primary;
     return Card(
-      clipBehavior: Clip.antiAlias,
+      color: isSelected
+          ? AppColors.primary.withOpacity(0.08)
+          : isOccupied
+              ? statusColor.withOpacity(0.08)
+              : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isSelected
+              ? AppColors.primary
+              : isOccupied
+                  ? statusColor
+                  : Colors.grey.shade300,
+          width: isSelected ? 2 : 1,
+        ),
+      ),
       child: InkWell(
-        onTap: () => _addToCart(item),
+        onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    if (item.description != null &&
-                        item.description!.isNotEmpty)
-                      Text(item.description!,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.muted),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
-                  ],
-                ),
+              Icon(
+                isOccupied
+                    ? Icons.table_bar
+                    : Icons.table_restaurant_outlined,
+                size: 28,
+                color: isOccupied ? statusColor : AppColors.muted,
               ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(formatMoney(item.price),
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary)),
-                  Icon(Icons.add_circle, color: AppColors.primary, size: 20),
-                ],
-              ),
+              const SizedBox(height: 4),
+              Text(table,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (isOccupied && orderTotal != null)
+                Text(formatMoney(orderTotal),
+                    style: TextStyle(fontSize: 11, color: statusColor)),
+              if (isOccupied && status != null)
+                Text(status,
+                    style: TextStyle(fontSize: 10, color: statusColor)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Small bar showing the Admin Host address and connection state.
+  Widget _ipBar() {
+    return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        color: AppColors.primary.withOpacity(0.05),
+        child: Row(
+          children: [
+            Icon(
+              _error == null ? Icons.cloud_done : Icons.cloud_off,
+              size: 16,
+              color: _error == null ? AppColors.success : AppColors.error,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Host: ${AppConfig.instance.baseUrl}',
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: _connect,
+              child: const Text('Change', style: TextStyle(fontSize: 11)),
+            ),
+          ],
+        ),
+    );
+  }
+
+  /// Inline error banner shown when the Admin Host is unreachable.
+  Widget _errorView() {
+    return Material(
+      color: AppColors.error.withOpacity(0.08),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _error ?? '',
+                style: const TextStyle(color: AppColors.error, fontSize: 12),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => _error = null);
+                _connect();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
         ),
       ),
     );
