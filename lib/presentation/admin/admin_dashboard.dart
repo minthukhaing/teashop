@@ -160,7 +160,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       Text('Table ${order.tableNumber}',
                           style: const TextStyle(fontWeight: FontWeight.w600)),
                       Text(
-                        '${order.createdAt != null ? _time.format(order.createdAt!) : "--:--"}  •  ${order.itemCount} items',
+                        '${order.createdAt != null ? _time.format(order.createdAt!) : "--:--"} - ${order.itemCount} items',
                         style: const TextStyle(
                             fontSize: 12, color: AppColors.muted),
                       ),

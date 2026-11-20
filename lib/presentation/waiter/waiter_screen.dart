@@ -1,4 +1,4 @@
-﻿library teashop_pos.presentation.waiter.waiter_screen;
+library teashop_pos.presentation.waiter.waiter_screen;
 
 import 'package:flutter/material.dart';
 
@@ -56,6 +56,15 @@ class _WaiterScreenState extends State<WaiterScreen> {
   bool _menuLoading = false;
   String? _error;
 
+  /// Controller for the instant menu search field.
+  final TextEditingController _searchController = TextEditingController();
+
+  /// State for category filtering
+  String _selectedCategory = 'All';
+
+  /// State for quantity tracking per menu item
+  final Map<int, int> _itemQuantities = {};
+
   List<Order> _orders = [];
   bool _ordersLoading = false;
 
@@ -68,12 +77,40 @@ class _WaiterScreenState extends State<WaiterScreen> {
   /// The table the waiter is currently taking an order for.
   String? _selectedTable;
 
-  /// Currently selected category filter on the Menu/Parcel tabs
-  /// (`null` means "All").
-  String? _selectedCategory;
-
   /// True when the Parcel (takeaway) tab is active.
   bool get _isParcelMode => _currentIndex == 3;
+
+  /// Filtered list combining search query AND category chip selection
+  List<MenuItem> get filteredItems {
+    final query = _searchController.text.trim().toLowerCase();
+    final isAll = _selectedCategory.isEmpty ||
+        _selectedCategory.toLowerCase() == 'all';
+
+    return _menu.where((item) {
+      // Filter by category (handles Myanmar text & case-insensitivity)
+      final categoryName = item.category.trim();
+      final categoryMatch = isAll ||
+          categoryName.toLowerCase() ==
+              _selectedCategory.trim().toLowerCase();
+
+      // Filter by search query - search in name using contains
+      final searchMatch =
+          query.isEmpty || item.name.toLowerCase().contains(query);
+
+      return categoryMatch && searchMatch;
+    }).toList();
+  }
+
+  /// Menu items grouped by category based on currently filtered items
+  Map<String, List<MenuItem>> get _filteredGroupedMenu {
+    final grouped = <String, List<MenuItem>>{};
+    for (final item in filteredItems) {
+      final category =
+          item.category.trim().isEmpty ? 'Other' : item.category.trim();
+      grouped.putIfAbsent(category, () => []).add(item);
+    }
+    return grouped;
+  }
 
   /// Number of tables shown on the Tables tab.
   static const int _tableCount = 12;
@@ -85,6 +122,23 @@ class _WaiterScreenState extends State<WaiterScreen> {
     AppConstants.statusReady,
   ];
 
+  Timer? _ordersTimer;
+
+  void _startOrdersTimer() {
+    _ordersTimer?.cancel();
+    _ordersTimer = Timer.periodic(AppConstants.ordersPollInterval, (_) {
+      if (!mounted) return;
+      if (WaiterAuth.instance.can(WaiterPermissions.viewOrders)) {
+        _loadOrders(silent: true);
+      }
+    });
+  }
+
+  void _stopOrdersTimer() {
+    _ordersTimer?.cancel();
+    _ordersTimer = null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -92,12 +146,15 @@ class _WaiterScreenState extends State<WaiterScreen> {
     _loadMenu();
     if (WaiterAuth.instance.can(WaiterPermissions.viewOrders)) {
       _loadOrders();
+      _startOrdersTimer();
     }
   }
 
   @override
   void dispose() {
+    _stopOrdersTimer();
     _ipController.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -125,6 +182,10 @@ class _WaiterScreenState extends State<WaiterScreen> {
     }
 
     _loadMenu();
+    if (WaiterAuth.instance.can(WaiterPermissions.viewOrders)) {
+      _loadOrders();
+      _startOrdersTimer();
+    }
   }
 
   Future<void> _loadMenu() async {
@@ -191,21 +252,14 @@ class _WaiterScreenState extends State<WaiterScreen> {
       _cart.values.fold(0.0, (sum, item) => sum + item.price * item.quantity);
 
   /// True when an order can be submitted: parcel orders always can, table
-  /// orders require a selected table without an active order.
+  /// orders require a selected table. When an active unpaid order exists,
+  /// new items are automatically merged and appended to that table's bill.
   bool get canTakeNewOrder {
     if (_isParcelMode) return true;
     if (_selectedTable == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Please select a table first (Tables tab).')),
-      );
-      return false;
-    }
-    if (_hasActiveOrder(_selectedTable!)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content:
-                Text('Table $_selectedTable already has an active order.')),
       );
       return false;
     }
@@ -362,6 +416,8 @@ class _WaiterScreenState extends State<WaiterScreen> {
     try {
       await AppConfig.instance.api.submitOrder(order);
       setState(() => _cart.clear());
+      // Immediately reload orders so Orders screen and Tables reflect it in real time
+      await _loadOrders(silent: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Order sent to kitchen!')),
@@ -374,8 +430,10 @@ class _WaiterScreenState extends State<WaiterScreen> {
     }
   }
 
-  Future<void> _loadOrders() async {
-    setState(() => _ordersLoading = true);
+  Future<void> _loadOrders({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _ordersLoading = true);
+    }
     try {
       // Only fetch ACTIVE orders whose bill has not been paid/cleared yet
       // (pending / preparing / ready).  Served and cancelled orders are
@@ -392,7 +450,9 @@ class _WaiterScreenState extends State<WaiterScreen> {
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _ordersLoading = false);
+      if (!silent) {
+        setState(() => _ordersLoading = false);
+      }
     }
   }
 
@@ -586,7 +646,12 @@ class _WaiterScreenState extends State<WaiterScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+          if (index == 0 || index == 2) {
+            _loadOrders(silent: true);
+          }
+        },
         items: items,
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
@@ -706,6 +771,35 @@ class _WaiterScreenState extends State<WaiterScreen> {
                       _tableOrderCard(tableOrders[i], canCancelOrders),
                 ),
               ),
+              if (WaiterAuth.instance.can(WaiterPermissions.takeOrders)) ...[
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: const Icon(Icons.add_shopping_cart),
+                      label: Text('Table $table သို့ ပစ္စည်းထပ်မှာရန် (Add Items)'),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        setState(() {
+                          _selectedTable = table;
+                          _isParcelMode = false;
+                          _currentIndex = 1; // jump to Menu
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
@@ -1083,81 +1177,247 @@ class _WaiterScreenState extends State<WaiterScreen> {
         ),
       );
     }
-    final categories = _selectedCategory == null
-        ? _groupedMenu.keys.toList()
-        : [_selectedCategory!];
+
+    final grouped = _filteredGroupedMenu;
+    final categories = grouped.keys.toList();
+    final allCategoryList = _groupedMenu.keys.toList()..sort();
+    final isAllSelected = _selectedCategory.isEmpty ||
+        _selectedCategory.toLowerCase() == 'all';
+
     return Column(
       children: [
+        // Instant search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'ပစ္စည်းများ ရှာဖွေရန် (Search items...)',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {});
+                      },
+                    ),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+
         // Category chips
         SizedBox(
-          height: 44,
+          height: 46,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             children: [
               ChoiceChip(
-                label: const Text('All'),
-                selected: _selectedCategory == null,
-                onSelected: (_) => setState(() => _selectedCategory = null),
+                label: Text('All (${_menu.length})'),
+                selected: isAllSelected,
+                selectedColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: isAllSelected ? Colors.white : AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+                onSelected: (_) {
+                  setState(() => _selectedCategory = 'All');
+                },
               ),
-              const SizedBox(width: 6),
-              for (final cat in _groupedMenu.keys)
+              const SizedBox(width: 8),
+              for (final cat in allCategoryList)
                 Padding(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text(cat),
-                    selected: _selectedCategory == cat,
-                    onSelected: (_) => setState(() => _selectedCategory = cat),
+                    label: Text('$cat (${_groupedMenu[cat]?.length ?? 0})'),
+                    selected: !isAllSelected &&
+                        _selectedCategory.trim().toLowerCase() ==
+                            cat.trim().toLowerCase(),
+                    selectedColor: AppColors.primary,
+                    labelStyle: TextStyle(
+                      color: (!isAllSelected &&
+                              _selectedCategory.trim().toLowerCase() ==
+                                  cat.trim().toLowerCase())
+                          ? Colors.white
+                          : AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                    onSelected: (selected) {
+                      setState(() {
+                        _selectedCategory = selected ? cat : 'All';
+                      });
+                    },
                   ),
                 ),
             ],
           ),
         ),
+
+        // Menu items list
         Expanded(
           child: _menuLoading
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
-                  itemCount: categories.length,
-                  itemBuilder: (context, i) {
-                    final cat = categories[i];
-                    final items = _groupedMenu[cat]!;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
-                          child: Text(cat,
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
-                        ),
-                        for (final item in items)
-                          ListTile(
-                            leading: item.imageUrl != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      item.imageUrl!,
-                                      width: 48,
-                                      height: 48,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          const Icon(Icons.fastfood),
-                                    ),
-                                  )
-                                : const Icon(Icons.fastfood),
-                            title: Text(item.name),
-                            subtitle: Text(formatMoney(item.price)),
-                            trailing: _AddButton(
-                              onPressed: () => _addToCart(item),
-                            ),
+              : categories.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.search_off,
+                              size: 48, color: AppColors.muted),
+                          const SizedBox(height: 8),
+                          Text(
+                            _searchController.text.trim().isNotEmpty
+                                ? 'No items match "${_searchController.text.trim()}"'
+                                : 'No items in this category.',
+                            style: const TextStyle(
+                                color: AppColors.muted, fontSize: 14),
                           ),
-                      ],
-                    );
-                  },
-                ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+                      itemCount: categories.length,
+                      itemBuilder: (context, i) {
+                        final cat = categories[i];
+                        final items = grouped[cat] ?? const [];
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+                              child: Text(
+                                cat,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            for (final item in items) _menuRow(item),
+                          ],
+                        );
+                      },
+                    ),
         ),
       ],
+    );
+  }
+
+  /// Single compact menu row: thumbnail, name, Kyat price, in-cart badge,
+  /// and add button cleanly aligned on a single horizontal row.
+  Widget _menuRow(MenuItem item) {
+    final inCart = _cart[item.id]?.quantity ?? 0;
+    return InkWell(
+      onTap: () => _addToCart(item),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Row(
+          children: [
+            if (item.imageUrl != null && item.imageUrl!.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  item.imageUrl!,
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.fastfood,
+                      size: 40, color: AppColors.muted),
+                ),
+              )
+            else
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.fastfood_outlined,
+                    size: 24, color: AppColors.primary),
+              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.style(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    formatKyat(item.price),
+                    style: AppFonts.style(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.success,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (inCart > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'x$inCart',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ),
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: IconButton(
+                onPressed: () => _addToCart(item),
+                padding: EdgeInsets.zero,
+                splashRadius: 18,
+                tooltip: 'Add to order',
+                icon: const Icon(Icons.add_circle,
+                    size: 28, color: AppColors.success),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

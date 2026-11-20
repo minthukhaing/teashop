@@ -2,6 +2,8 @@ library teashop_pos.presentation.app_theme;
 
 import 'package:flutter/material.dart';
 
+import '../core/constants/app_constants.dart';
+
 // ─────────────────────────── Color Palettes ───────────────────────────────────
 
 /// Teashop-inspired color palette.
@@ -35,7 +37,7 @@ class AdminColors {
 /// `Pyidaungsu` (bundled in `fonts/`, declared in `pubspec.yaml`) is the
 /// primary family applied globally via [ThemeData.fontFamily]; `NotoSansMyanmar`
 /// is a fallback for any glyph Pyidaungsu lacks. Because both files are bundled
-/// locally the POS renders Myanmar text correctly offline – no runtime font
+/// locally the POS renders Myanmar text correctly offline -  - no runtime font
 /// download. Use [AppFonts.style] for one-off [TextStyle]s, or simply rely on
 /// [appTheme] which applies the font to every [Text] widget through the Material
 /// [TextTheme].
@@ -75,8 +77,8 @@ class AppFonts {
 
 /// Full [ThemeData] for the Teashop POS app with the bundled Myanmar Unicode
 /// font (Pyidaungsu, fallback Noto Sans Myanmar) applied globally so every
-/// [Text] widget renders Myanmar glyphs correctly – including correct Asat /
-/// Virama stacking – without any per-widget font configuration.
+/// [Text] widget renders Myanmar glyphs correctly -  - including correct Asat /
+/// Virama stacking -  - without any per-widget font configuration.
 ThemeData appTheme() {
   // Build the base colour scheme first.
   final cs = ColorScheme.fromSeed(
@@ -202,10 +204,15 @@ ThemeData appTheme() {
 
 // ─────────────────────────── Utility ─────────────────────────────────────────
 
-/// Formats a monetary amount in Kyat for display.  e.g. "K 5,000"
-String formatMoney(double amount) {
+/// Formats a monetary amount in Kyat for display.  e.g. "5,000 ကျပ်"
+///
+/// All monetary values across the app (vouchers, order summaries and item
+/// lists) are denoted with the Myanmar currency unit "ကျပ်" (Kyat).
+String formatMoney(double amount) => formatKyat(amount);
+
+/// Formats a monetary amount with the Kyat unit in Myanmar.  e.g. "1,500 ကျပ်"
+String formatKyat(double amount) {
   final rounded = amount.round();
-  // Simple thousands separator
   final str = rounded.toString();
   final buffer = StringBuffer();
   int count = 0;
@@ -214,5 +221,5 @@ String formatMoney(double amount) {
     buffer.write(str[i]);
     count++;
   }
-  return 'K ${buffer.toString().split('').reversed.join()}';
+  return '${buffer.toString().split('').reversed.join()} ${AppConstants.currency}';
 }

@@ -24,6 +24,10 @@ class AppConstants {
   /// REST resource paths.
   static const String menuEndpoint = '/menu';
   static const String ordersEndpoint = '/orders';
+  static const String tablesEndpoint = '/tables';
+
+  /// Shop profile / billing settings (voucher header + Gov Tax %).
+  static const String settingsEndpoint = '/settings';
 
   /// Authentication endpoint (login) for Waiter/Kitchen clients.
   static const String authEndpoint = '/auth';
@@ -35,7 +39,7 @@ class AppConstants {
   static const String databaseName = 'teashop_pos.db';
 
   /// Current SQLite schema version (bump + write a migration when it changes).
-  static const int databaseVersion = 4;
+  static const int databaseVersion = 7;
 
   /// Bind to every IPv4 interface so Wi-Fi clients on the LAN can reach the host.
   static final InternetAddress serverBindAddress = InternetAddress.anyIPv4;
@@ -47,6 +51,10 @@ class AppConstants {
   static const String statusServed = 'served';
   static const String statusCancelled = 'cancelled';
 
+  /// The bill has been settled at checkout (Cash / KPay / - ) - the order is
+  /// closed and no longer editable, deletable or shown on the unpaid list.
+  static const String statusPaid = 'paid';
+
   /// All statuses in kitchen workflow order.
   static List<String> get allOrderStatuses => [
         statusPending,
@@ -54,7 +62,31 @@ class AppConstants {
         statusReady,
         statusServed,
         statusCancelled,
+        statusPaid,
       ];
+
+  /// Statuses that mean the bill is still UNPAID - the order is active and has
+  /// not been paid/cleared yet.
+  static List<String> get unpaidStatuses => [
+        statusPending,
+        statusPreparing,
+        statusReady,
+      ];
+
+  /// Statuses that mean the bill has been cleared (paid out or voided).
+  static List<String> get paidStatuses =>
+      [statusServed, statusCancelled, statusPaid];
+
+  /// Whether [status] still represents an unpaid / uncleared bill.
+  ///
+  /// Comparison is case-insensitive so mixed-case values coming from the
+  /// database or a remote client are handled consistently.
+  static bool isUnpaidStatus(String status) => unpaidStatuses
+      .any((s) => s.toLowerCase() == status.trim().toLowerCase());
+
+  /// Whether [status] represents a paid / cleared / voided bill.
+  static bool isPaidOrCancelledStatus(String status) => paidStatuses
+      .any((s) => s.toLowerCase() == status.trim().toLowerCase());
 
   /// Display label for a status.
   static String statusLabel(String status) => switch (status) {
@@ -63,9 +95,10 @@ class AppConstants {
         statusReady => 'Ready',
         statusServed => 'Served',
         statusCancelled => 'Cancelled',
+        statusPaid => 'Paid',
         _ => status,
       };
 
-  /// Default currency symbol.
-  static const String currency = '\$';
+  /// Currency unit used across the app (Kyat, in Myanmar).
+  static const String currency = 'ကျပ်';
 }

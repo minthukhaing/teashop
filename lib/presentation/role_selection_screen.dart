@@ -10,67 +10,69 @@ import 'responsive_helpers.dart';
 import 'waiter/waiter_login_screen.dart';
 
 /// Runtime role picker shown when the app is not launched with a `--dart-define`.
+///
+/// Mobile-first redesign:
+/// - No AppBar; the brand identity lives in a hero header inside the body.
+/// - Role cards are full-width, >= 88dp tall touch targets on compact screens
+///   and flow into a 2-column grid on medium+ breakpoints.
+/// - Cards use elevated glass surfaces with a coloured tint, soft shadow and
+///   animated press feedback (scale + ripple) so taps feel responsive.
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Teashop POS')),
       body: GradientBackground(
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
               final bp = breakpointOf(constraints.maxWidth);
-              final columns = bp.isCompact ? 1 : (bp.isMedium ? 2 : 3);
+              final columns = bp.isCompact ? 1 : 2;
               return Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: bp.isLarge ? 1100 : double.infinity,
                   ),
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: bp.isCompact ? 20 : 32,
+                      vertical: 24,
+                    ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _header(),
-                        const SizedBox(height: 28),
+                        const _BrandHeader(),
+                        SizedBox(height: bp.isCompact ? 32 : 40),
                         GridView.count(
                           crossAxisCount: columns,
                           mainAxisSpacing: 16,
                           crossAxisSpacing: 16,
-                          childAspectRatio: bp.isCompact ? 2.0 : 1.8,
+                          childAspectRatio: bp.isCompact ? 1.55 : 1.5,
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           children: [
-                            _roleCard(
-                              context,
-                              'Admin Host',
-                              'Embedded SQLite DB + live HTTP server on :8080',
-                              Icons.computer,
-                              AppColors.primary,
-                              AppMode.admin,
+                            _RoleCard(
+                              title: 'Admin Host',
+                              description:
+                                  'Embedded SQLite DB + live HTTP server on :8080',
+                              icon: Icons.computer,
+                              color: AppColors.primary,
+                              role: AppMode.admin,
                             ),
-                            _roleCard(
-                              context,
-                              'Waiter',
-                              'Browse the menu and send orders to the kitchen',
-                              Icons.point_of_sale,
-                              AppColors.accent,
-                              AppMode.waiter,
-                            ),
-                            _roleCard(
-                              context,
-                              'Kitchen Display',
-                              'View incoming orders and advance each step',
-                              Icons.restaurant,
-                              AppColors.success,
-                              AppMode.kitchen,
+                            _RoleCard(
+                              title: 'Waiter',
+                              description:
+                                  'Browse the menu and send orders to the kitchen',
+                              icon: Icons.point_of_sale,
+                              color: AppColors.accent,
+                              role: AppMode.waiter,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 24),
-                        _footer(),
+                        const SizedBox(height: 32),
+                        const _Footer(),
                       ],
                     ),
                   ),
@@ -82,102 +84,194 @@ class RoleSelectionScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _header() {
+// ───────────────────────────── Brand header ──────────────────────────────────
+
+class _BrandHeader extends StatelessWidget {
+  const _BrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
+        // Logo chip.
         Container(
-          width: 72,
-          height: 72,
+          width: 84,
+          height: 84,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [AppColors.primary, AppColors.accent],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.3),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
+                color: AppColors.primary.withValues(alpha: 0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
-          child: const Icon(Icons.local_cafe, color: Colors.white, size: 36),
+          child: const Icon(Icons.local_cafe, color: Colors.white, size: 40),
         ),
-        const SizedBox(height: 16),
-        const Text(
+        const SizedBox(height: 24),
+        // Brand eyebrow label.
+        Text(
+          'TEASHOP POS',
+          textAlign: TextAlign.center,
+          style: AppFonts.style(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 4,
+            color: AppColors.accent,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
           'Welcome',
-          style: TextStyle(
-              fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.onSurface),
+          textAlign: TextAlign.center,
+          style: AppFonts.style(
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+            height: 1.2,
+          ),
         ),
-        const SizedBox(height: 6),
-        const Text(
+        const SizedBox(height: 8),
+        Text(
           'Choose your role to continue',
-          style: TextStyle(fontSize: 14, color: AppColors.muted),
+          textAlign: TextAlign.center,
+          style: AppFonts.style(
+            fontSize: 15,
+            color: AppColors.muted,
+            height: 1.4,
+          ),
         ),
       ],
     );
   }
+}
 
-  Widget _footer() {
-    return const Text(
-      'Local network POS  •  v1.0.0',
-      style: TextStyle(fontSize: 12, color: AppColors.muted),
-    );
-  }
+// ───────────────────────────── Role card ─────────────────────────────────────
 
-  Widget _roleCard(
-    BuildContext context,
-    String title,
-    String sub,
-    IconData icon,
-    Color color,
-    AppMode role,
-  ) {
-    return GlassCard(
-      tint: color,
-      opacity: 0.12,
-      padding: const EdgeInsets.all(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => _pick(context, role),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: color.withOpacity(0.2),
-                  child: Icon(icon, color: color),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                if (role == AppMode.admin || role == AppMode.waiter)
-                  Icon(Icons.lock_outline, size: 16, color: color.withOpacity(0.7)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              sub,
-              style: const TextStyle(color: AppColors.muted, fontSize: 13),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Icon(Icons.arrow_forward, color: color),
+/// A single tappable role card with press-scale and ripple feedback.
+class _RoleCard extends StatefulWidget {
+  const _RoleCard({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.color,
+    required this.role,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final AppMode role;
+
+  @override
+  State<_RoleCard> createState() => _RoleCardState();
+}
+
+class _RoleCardState extends State<_RoleCard> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) => setState(() => _pressed = value);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    return AnimatedScale(
+      scale: _pressed ? 0.97 : 1.0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: _pressed ? 0.30 : 0.18),
+              blurRadius: _pressed ? 10 : 20,
+              offset: Offset(0, _pressed ? 2 : 8),
             ),
           ],
+        ),
+        child: GlassCard(
+          tint: Colors.white,
+          opacity: 0.85,
+          radius: 22,
+          padding: const EdgeInsets.all(20),
+          border: Border.all(color: color.withValues(alpha: _pressed ? 0.55 : 0.25)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            splashColor: color.withValues(alpha: 0.12),
+            highlightColor: color.withValues(alpha: 0.08),
+            onTapDown: (_) => _setPressed(true),
+            onTapCancel: () => _setPressed(false),
+            onTap: () {
+              _setPressed(false);
+              _pick(context, widget.role);
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Icon container: rounded square with tinted fill.
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: color.withValues(alpha: 0.25)),
+                  ),
+                  child: Icon(widget.icon, color: color, size: 26),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.style(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  widget.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppFonts.style(
+                    fontSize: 13,
+                    color: AppColors.muted,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Continue affordance row.
+                Row(
+                  children: [
+                    Text(
+                      'Continue',
+                      style: AppFonts.style(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_rounded, color: color, size: 18),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -198,5 +292,20 @@ class RoleSelectionScreen extends StatelessWidget {
         MaterialPageRoute(builder: (_) => home),
       );
     }
+  }
+}
+
+// ───────────────────────────── Footer ────────────────────────────────────────
+
+class _Footer extends StatelessWidget {
+  const _Footer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Local network POS - v1.0.0',
+      textAlign: TextAlign.center,
+      style: AppFonts.style(fontSize: 12, color: AppColors.muted),
+    );
   }
 }

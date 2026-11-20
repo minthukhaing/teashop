@@ -18,10 +18,9 @@ void main() {
     await tester.pumpWidget(const TeashopApp());
 
     // The default launch (no APP_MODE flag) shows the role picker.
-    expect(find.text('Teashop POS'), findsOneWidget);
+    expect(find.text('TEASHOP POS'), findsOneWidget);
     expect(find.text('Admin Host'), findsOneWidget);
     expect(find.text('Waiter'), findsOneWidget);
-    expect(find.text('Kitchen Display'), findsOneWidget);
   });
 
   testWidgets('Tapping Waiter opens the waiter login screen',

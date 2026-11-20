@@ -62,7 +62,7 @@ class OrderItem {
   factory OrderItem.fromJson(Map<String, dynamic> json) => _$OrderItemFromJson(json);
   Map<String, dynamic> toJson() => _$OrderItemToJson(this);
 
-  /// Line subtotal = price × quantity.
+  /// Line subtotal = price - quantity.
   double get subtotal => price * quantity;
 
   OrderItem copyWith({

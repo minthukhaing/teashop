@@ -3,6 +3,7 @@ library teashop_pos.presentation.admin.screens.admin_income_expense_screen;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../app_theme.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../data/database/app_database.dart';
 
 class _Transaction {
@@ -37,7 +38,6 @@ class _AdminIncomeExpenseScreenState extends State<AdminIncomeExpenseScreen> {
   int _nextId = 1;
   final List<_Transaction> _txns = [];
   double _salesRevenue = 0;
-  bool _loading = false;
 
   double get _totalIncome =>
       _salesRevenue + _txns.where((t) => t.type == 'income').fold(0.0, (s, t) => s + t.amount);
@@ -52,17 +52,14 @@ class _AdminIncomeExpenseScreenState extends State<AdminIncomeExpenseScreen> {
   }
 
   Future<void> _loadRevenue() async {
-    setState(() => _loading = true);
     try {
       final stats = await _db.getOrderStats();
       if (!mounted) return;
       setState(() {
         _salesRevenue = stats.todayRevenue;
-        _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      // Revenue stays at its previous value when stats are unavailable.
     }
   }
 
@@ -92,7 +89,8 @@ class _AdminIncomeExpenseScreenState extends State<AdminIncomeExpenseScreen> {
                   controller: amountCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: 'ပမာဏ (ကျပ်)', prefixText: 'K '),
+                      labelText: 'ပမာဏ (${AppConstants.currency})',
+                      prefixText: '${AppConstants.currency} '),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -290,7 +288,7 @@ class _AdminIncomeExpenseScreenState extends State<AdminIncomeExpenseScreen> {
           Icon(icon, color: color, size: 20),
           const SizedBox(height: 4),
           Text(
-            'K ${amount.toStringAsFixed(0)}',
+            formatKyat(amount),
             style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -326,11 +324,11 @@ class _AdminIncomeExpenseScreenState extends State<AdminIncomeExpenseScreen> {
         title: Text(txn.title,
             style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
-          '${_fmt.format(txn.date)}${txn.note.isNotEmpty ? '  •  ${txn.note}' : ''}',
+          '${_fmt.format(txn.date)}${txn.note.isNotEmpty ? ' - ${txn.note}' : ''}',
           style: const TextStyle(fontSize: 12, color: AppColors.muted),
         ),
         trailing: Text(
-          '${isIncome ? '+' : '-'}K ${txn.amount.toStringAsFixed(0)}',
+          '${isIncome ? '+' : '-'}${formatKyat(txn.amount)}',
           style: TextStyle(
               color: color,
               fontWeight: FontWeight.bold,

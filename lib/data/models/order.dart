@@ -17,10 +17,13 @@ class Order {
   Order({
     this.id,
     required this.tableNumber,
-    this.status = statusPending,
+    this.status = AppConstants.statusPending,
     required this.total,
     this.customerName,
     this.notes,
+    this.waiterName,
+    this.paymentMethod,
+    this.paidAt,
     this.createdAt,
     this.items = const [],
   });
@@ -31,6 +34,17 @@ class Order {
   final double total;
   final String? customerName;
   final String? notes;
+
+  /// Display name of the waiter who placed/cleared this order - shown on the
+  /// POS voucher/bill.
+  final String? waiterName;
+
+  /// How the bill was settled at checkout (e.g. `cash`, `kpay`), if paid.
+  final String? paymentMethod;
+
+  /// When the bill was settled, if paid.
+  @IsoDateTimeConverter()
+  final DateTime? paidAt;
 
   @IsoDateTimeConverter()
   final DateTime? createdAt;
@@ -49,6 +63,9 @@ class Order {
       'total': total,
       'customer_name': MyanmarText.normalizeNullable(customerName),
       'notes': MyanmarText.normalizeNullable(notes),
+      'waiter_name': MyanmarText.normalizeNullable(waiterName),
+      'payment_method': MyanmarText.normalizeNullable(paymentMethod),
+      'paid_at': paidAt?.toIso8601String(),
       'created_at': createdAt?.toIso8601String(),
     };
   }
@@ -61,6 +78,10 @@ class Order {
       total: (map['total'] as num).toDouble(),
       customerName: MyanmarText.normalizeNullable(map['customer_name'] as String?),
       notes: MyanmarText.normalizeNullable(map['notes'] as String?),
+      waiterName: MyanmarText.normalizeNullable(map['waiter_name'] as String?),
+      paymentMethod:
+          MyanmarText.normalizeNullable(map['payment_method'] as String?),
+      paidAt: DateTime.tryParse(map['paid_at'] as String? ?? ''),
       createdAt: DateTime.tryParse(map['created_at'] as String? ?? ''),
     );
   }
@@ -78,6 +99,9 @@ class Order {
     double? total,
     String? customerName,
     String? notes,
+    String? waiterName,
+    String? paymentMethod,
+    DateTime? paidAt,
     DateTime? createdAt,
     bool clearCreatedAt = false,
     List<OrderItem>? items,
@@ -89,6 +113,9 @@ class Order {
       total: total ?? this.total,
       customerName: customerName ?? this.customerName,
       notes: notes ?? this.notes,
+      waiterName: waiterName ?? this.waiterName,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      paidAt: paidAt ?? this.paidAt,
       createdAt: clearCreatedAt ? null : createdAt ?? this.createdAt,
       items: items ?? this.items,
     );

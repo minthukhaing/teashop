@@ -6,10 +6,16 @@ import '../../../data/database/app_database.dart';
 import '../../../data/models/menu_item.dart';
 import '../app_theme.dart';
 import '../common_widgets.dart';
-import '../responsive_helpers.dart';
 
+/// Admin menu management, styled to match the waiter's menu view:
+/// horizontal category pills + minimalist divider-separated item rows.
+/// Tap a row to edit it; use the trailing icon to delete it.
 class MenuManagementScreen extends StatefulWidget {
-  const MenuManagementScreen({super.key});
+  const MenuManagementScreen({super.key, this.initialCategory});
+
+  /// Optional category to pre-filter the list with (used when navigating
+  /// here from the Categories screen).
+  final String? initialCategory;
 
   @override
   State<MenuManagementScreen> createState() => _MenuManagementScreenState();
@@ -19,10 +25,12 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   final AppDatabase _db = AppDatabase.instance;
   List<MenuItem> _items = [];
   bool _loading = false;
+  String? _selectedCategory;
 
   @override
   void initState() {
     super.initState();
+    _selectedCategory = widget.initialCategory;
     _load();
   }
 
@@ -33,13 +41,20 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     setState(() {
       _items = items;
       _loading = false;
+      // Drop the filter if the selected category no longer exists.
+      if (_selectedCategory != null &&
+          !items.any((i) => i.category == _selectedCategory)) {
+        _selectedCategory = null;
+      }
     });
   }
 
-  Future<void> _toggle(MenuItem item) async {
-    await _db.toggleMenuItemAvailability(item.id!, !item.available);
-    await _load();
-  }
+  List<String> get _categories =>
+      _items.map((i) => i.category).toSet().toList()..sort();
+
+  List<MenuItem> get _filtered => _selectedCategory == null
+      ? _items
+      : _items.where((i) => i.category == _selectedCategory).toList();
 
   Future<void> _delete(MenuItem item) async {
     final ok = await showDialog<bool>(
@@ -71,7 +86,12 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final priceCtrl = TextEditingController(
         text: isEdit ? existing.price.toStringAsFixed(2) : '');
-    final categoryCtrl = TextEditingController(text: existing?.category ?? '');
+    final categories = await _db.getCategories();
+    String? selectedCategory = existing?.category;
+    if (selectedCategory != null && !categories.contains(selectedCategory)) {
+      categories.insert(0, selectedCategory);
+    }
+    if (categories.isEmpty) categories.add('General');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
     bool available = existing?.available ?? true;
 
@@ -96,10 +116,17 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                   appTextField(
                       context: context, label: 'Name', controller: nameCtrl),
                   const SizedBox(height: 12),
-                  appTextField(
-                      context: context,
-                      label: 'Category',
-                      controller: categoryCtrl),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    items: categories
+                        .map((c) => DropdownMenuItem<String>(
+                              value: c,
+                              child: Text(c),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() => selectedCategory = v),
+                  ),
                   const SizedBox(height: 12),
                   appTextField(
                       context: context,
@@ -149,7 +176,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       final item = MenuItem(
         id: isEdit ? existing.id : null,
         name: nameCtrl.text,
-        category: categoryCtrl.text,
+        category: selectedCategory ?? '',
         description: descCtrl.text,
         price: price,
         available: available,
@@ -202,82 +229,142 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
           const Expanded(
               child: Center(
                   child: Text('No menu items. Add one to get started.')))
-        else
+        else ...[
+          _categoryPills(),
           Expanded(
-            child: ResponsiveGrid(
-              compact: 1,
-              medium: 2,
-              expanded: 3,
-              large: 4,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              childAspectRatio: 1.4,
-              itemCount: _items.length,
-              itemBuilder: (context, index) => _menuCard(_items[index]),
-            ),
+            child: _filtered.isEmpty
+                ? const Center(
+                    child: Text('No items in this category.',
+                        style: TextStyle(color: AppColors.muted)),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    itemCount: _filtered.length,
+                    itemBuilder: (context, i) => _menuItemRow(_filtered[i]),
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: Color(0x1F000000), // 12% black hairline
+                    ),
+                  ),
           ),
+        ],
       ],
     );
   }
 
-  Widget _menuCard(MenuItem item) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
+  /// Horizontal category filter pills, same pattern as the waiter's menu view.
+  Widget _categoryPills() {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        children: [
+          _categoryPill(label: 'All', icon: Icons.apps, category: null),
+          for (final category in _categories)
+            _categoryPill(
+              label: category,
+              icon: _categoryIcon(category),
+              category: category,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _categoryPill({
+    required String label,
+    required IconData icon,
+    required String? category,
+  }) {
+    final active = _selectedCategory == category;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: active ? AppColors.primary : AppColors.accent,
+        borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () => setState(() => _selectedCategory = category),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                CircleAvatar(
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  child: Text(item.category.isNotEmpty
-                      ? item.category[0].toUpperCase()
-                      : '?'),
+                Icon(icon, size: 16, color: Colors.white),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      Text(
-                        '${item.category}  •  ${formatMoney(item.price)}',
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.muted),
-                      ),
-                    ],
-                  ),
-                ),
-                Switch(value: item.available, onChanged: (_) => _toggle(item)),
               ],
             ),
-            if (item.description != null && item.description!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  item.description!,
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Picks a sensible icon for a menu category name (same as the waiter view).
+  IconData _categoryIcon(String category) {
+    final c = category.toLowerCase();
+    if (c.contains('tea') || c.contains('coffee') || c.contains('လက်ဖက်')) {
+      return Icons.local_cafe;
+    }
+    if (c.contains('juice') || c.contains('drink') || c.contains('soft')) {
+      return Icons.local_drink;
+    }
+    if (c.contains('dessert') || c.contains('sweet') || c.contains('အချို')) {
+      return Icons.icecream;
+    }
+    if (c.contains('soup') || c.contains('ဟင်း')) return Icons.ramen_dining;
+    if (c.contains('rice') || c.contains('ထမင်း')) return Icons.rice_bowl;
+    return Icons.restaurant;
+  }
+
+  /// Minimalist item row matching the waiter's menu: name on the left, price
+  /// and edit/delete actions on the right, separated by thin dividers.
+  /// Tapping the row also opens the edit dialog.
+  Widget _menuItemRow(MenuItem item) {
+    return InkWell(
+      onTap: () => _editOrAdd(item),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: MenuItemNamePriceRow(
+                name: item.name,
+                price: item.price,
+                nameStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF212121),
+                ),
+                priceStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.muted,
                 ),
               ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  icon:
-                      const Icon(Icons.delete_outline, color: AppColors.error),
-                  onPressed: () => _delete(item),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.edit, color: AppColors.primary),
-                  onPressed: () => _editOrAdd(item),
-                ),
-              ],
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined,
+                  size: 20, color: AppColors.primary),
+              tooltip: 'Edit',
+              onPressed: () => _editOrAdd(item),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 20, color: AppColors.error),
+              tooltip: 'Delete',
+              onPressed: () => _delete(item),
             ),
           ],
         ),

@@ -13,6 +13,9 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
   total: (json['total'] as num).toDouble(),
   customerName: json['customerName'] as String?,
   notes: json['notes'] as String?,
+  waiterName: json['waiterName'] as String?,
+  paymentMethod: json['paymentMethod'] as String?,
+  paidAt: const IsoDateTimeConverter().fromJson(json['paidAt'] as String?),
   createdAt: const IsoDateTimeConverter().fromJson(
     json['createdAt'] as String?,
   ),
@@ -30,6 +33,9 @@ Map<String, dynamic> _$OrderToJson(Order instance) => <String, dynamic>{
   'total': instance.total,
   'customerName': instance.customerName,
   'notes': instance.notes,
+  'waiterName': instance.waiterName,
+  'paymentMethod': instance.paymentMethod,
+  'paidAt': const IsoDateTimeConverter().toJson(instance.paidAt),
   'createdAt': const IsoDateTimeConverter().toJson(instance.createdAt),
   'items': instance.items.map((e) => e.toJson()).toList(),
 };

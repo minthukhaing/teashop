@@ -7,7 +7,6 @@ library teashop_pos.printer.receipt;
 
 import 'dart:typed_data';
 
-import 'printer_models.dart';
 import 'printer_service.dart';
 import 'receipt_text.dart';
 

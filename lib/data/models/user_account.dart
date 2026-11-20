@@ -4,7 +4,7 @@ import '../../core/auth/waiter_permissions.dart';
 
 /// A user account row from the `users` table.
 ///
-/// The password hash is intentionally excluded from this model — it is used for
+/// The password hash is intentionally excluded from this model - it is used for
 /// listing accounts and for the authenticated session. Hashing is handled
 /// inside [AppDatabase] so the plaintext never leaves the database layer.
 class UserAccount {

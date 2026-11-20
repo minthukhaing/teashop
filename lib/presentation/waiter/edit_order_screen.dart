@@ -4,28 +4,42 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth/waiter_auth.dart';
 import '../../core/auth/waiter_permissions.dart';
+import '../../core/constants/app_constants.dart';
 import '../../data/models/menu_item.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_item.dart';
 import '../app_mode.dart';
 import '../app_theme.dart';
 import '../common_widgets.dart';
+import 'add_items_screen.dart';
 
 /// Dedicated, full-screen editor for an active, UNPAID order.
 ///
 /// Replaces the old crowded popup/bottom-sheet flow: the waiter navigates here
 /// with `Navigator.push` from the unpaid orders list (or a table's order card).
 /// The screen shows every ordered menu item for that table with its unit
-/// price, quantity and line subtotal — all in Kyat ("ကျပ်") — and provides
+/// price, quantity and line subtotal - all in Kyat ("ကျပ်") - and provides
 /// intuitive controls:
 ///
 ///  * `+` / `-` steppers to change an item's quantity,
 ///  * a trash button to remove a single line item,
-///  * a menu list to add new items to the order,
+///  * a prominent "+ ပစ္စည်းအသစ် ထည့်မည်" button that navigates (via
+///    `Navigator.push`) to the dedicated menu picker ([AddItemsScreen]) to
+///    add new items to this order cleanly,
 ///  * `Save Changes` which PUTs the updated order (the Admin Host recomputes
-///    the total), and
+///    the total),
 ///  * an optional `Delete Order` action (permission-gated) that removes the
-///    whole unpaid order.
+///    whole unpaid order, and
+///  * `ငွေရှင်းမည် (Checkout)` (permission-gated) which opens a payment
+///    dialog - pick a method (Cash / KPay / Wave Pay), enter the amount
+///    received for cash and see the change in Kyat - then marks the order
+///    PAID on the Admin Host.
+///
+/// Role-based permissions (granted per-waiter by the Admin):
+///  * `edit_orders` - without it the screen is a READ-ONLY view: steppers,
+///    delete buttons, "Add Items" and "Save" are disabled.
+///  * `process_payments` - without it the Checkout button is hidden.
+///  * `cancel_orders` (+ `canDelete`) - gates deleting the whole order.
 ///
 /// The screen pops with `true` when anything changed so the caller can reload
 /// the unpaid orders list.
@@ -67,6 +81,17 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
     }
   }
 
+  /// Whether the signed-in waiter may edit this order's items at all
+  /// (Admin-granted `edit_orders` permission).  When false the screen becomes
+  /// a read-only view: steppers, delete buttons, "Add Items" and "Save" are
+  /// all disabled.
+  bool get _canEdit => WaiterAuth.instance.can(WaiterPermissions.editOrders);
+
+  /// Whether the signed-in waiter may settle the bill (Admin-granted
+  /// `process_payments` permission).  Controls the Checkout button.
+  bool get _canCheckout =>
+      WaiterAuth.instance.can(WaiterPermissions.processPayments);
+
   int _keyOf(OrderItem item) =>
       item.menuItemId ?? -(item.id ?? _editCart.length);
 
@@ -79,6 +104,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
       _items.fold(0.0, (sum, item) => sum + item.price * item.quantity);
 
   void _changeQty(OrderItem item, int delta) {
+    if (!_canEdit) return;
     setState(() {
       final key = _keyOf(item);
       final current = _editCart[key];
@@ -93,22 +119,51 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
   }
 
   void _removeItem(OrderItem item) {
+    if (!_canEdit) return;
     setState(() => _editCart.remove(_keyOf(item)));
   }
 
-  void _addItem(MenuItem menuItem) {
+  /// Opens the dedicated full-screen menu picker ([AddItemsScreen]) via
+  /// `Navigator.push` so the waiter can add new items to THIS order cleanly.
+  /// The picker is pre-seeded with the order's current quantities and pops
+  /// with a `menuItemId -> quantity` map which is merged back into the local
+  /// editable cart.  Off-menu items (no `menuItemId`) are always preserved.
+  Future<void> _openAddItems() async {
+    if (!_canEdit) return;
+    final initialQuantities = <int, int>{};
+    for (final entry in _editCart.entries) {
+      final item = entry.value;
+      if (item.menuItemId != null) {
+        initialQuantities[item.menuItemId!] = item.quantity;
+      }
+    }
+
+    final result = await Navigator.of(context).push<Map<int, int>>(
+      MaterialPageRoute(
+        builder: (_) => AddItemsScreen(
+          menu: widget.menu,
+          initialQuantities: initialQuantities,
+        ),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final menuById = {for (final m in widget.menu) m.id: m};
     setState(() {
-      final existing = _editCart[menuItem.id];
-      if (existing != null) {
-        _editCart[menuItem.id!] =
-            existing.copyWith(quantity: existing.quantity + 1);
-      } else {
-        _editCart[menuItem.id!] = OrderItem(
-          menuItemId: menuItem.id,
-          name: menuItem.name,
-          price: menuItem.price,
-          quantity: 1,
-        );
+      for (final entry in result.entries) {
+        final menuItem = menuById[entry.key];
+        if (menuItem == null) continue;
+        final qty = entry.value;
+        if (qty <= 0) {
+          _editCart.remove(entry.key);
+        } else {
+          _editCart[entry.key] = OrderItem(
+            menuItemId: menuItem.id,
+            name: menuItem.name,
+            price: menuItem.price,
+            quantity: qty,
+          );
+        }
       }
     });
   }
@@ -116,6 +171,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
   /// Saves the edited order.  The server recomputes the total from the
   /// submitted line items, so the local Kyat subtotal is only a preview.
   Future<void> _save() async {
+    if (!_canEdit) return;
     if (_items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -140,6 +196,56 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to update order: $e')),
+      );
+    }
+  }
+
+  /// Opens the payment dialog, settles the bill and marks the order PAID.
+  ///
+  /// Any unsaved edits are pushed to the Admin Host first (so the paid total
+  /// matches the on-screen items), then the order is checked out with the
+  /// chosen payment method.  On success the screen pops with `true` so the
+  /// caller reloads the unpaid orders list.
+  Future<void> _checkout() async {
+    if (!_canCheckout) return;
+    if (_items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Cannot check out an order with no items.')),
+      );
+      return;
+    }
+
+    final payment = await showDialog<_PaymentResult>(
+      context: context,
+      builder: (_) => _PaymentDialog(total: _total),
+    );
+    if (payment == null || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      // Push unsaved edits first so the settled total matches the screen.
+      if (_canEdit) {
+        await AppConfig.instance.api
+            .updateOrder(widget.order.copyWith(items: _items));
+      }
+      await AppConfig.instance.api
+          .checkoutOrder(widget.order.id!, payment.method);
+      if (!mounted) return;
+      final change = payment.received - _total;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Order #${widget.order.id} paid via ${payment.methodLabel}.'
+              '${payment.received > 0 && change > 0 ? '  Change: ${formatKyat(change)}.' : ''}'),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Checkout failed: $e')),
       );
     }
   }
@@ -194,7 +300,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Order #${order.id} — Table ${order.tableNumber}'),
+        title: Text('Edit Order #${order.id} - Table ${order.tableNumber}'),
         actions: [
           if (widget.canDelete)
             IconButton(
@@ -218,7 +324,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Table ${order.tableNumber}  •  '
+                    'Table ${order.tableNumber} - '
                     '${order.createdAt != null ? AppConfig.instance.dateFormat.format(order.createdAt!) : "--:--"}',
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600),
@@ -229,45 +335,71 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
             ),
           ),
           const Divider(height: 1),
-          // ── Current items + add-items list ──
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              children: [
-                const Text('Ordered items',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted)),
-                const SizedBox(height: 8),
-                if (items.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
+          // ── Read-only banner when the waiter lacks edit permission ──
+          if (!_canEdit)
+            Container(
+              width: double.infinity,
+              color: AppColors.warning.withOpacity(0.12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 16, color: AppColors.warning),
+                  SizedBox(width: 8),
+                  Expanded(
                     child: Text(
-                        'No items left — add one below or delete the whole '
-                        'order instead.',
-                        style:
-                            TextStyle(color: AppColors.muted, fontSize: 13)),
+                      'Read-only view - your account is not allowed to edit '
+                      'orders. Ask an Admin for the "Edit orders" permission.',
+                      style: TextStyle(fontSize: 12, color: AppColors.warning),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // ── Clean ordered-items list only ──
+          Expanded(
+            child: items.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.remove_shopping_cart_outlined,
+                            size: 56, color: AppColors.muted),
+                        SizedBox(height: 12),
+                        Text('No items left on this order.',
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 14)),
+                        SizedBox(height: 4),
+                        Text('Add items or delete the whole order.',
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 12)),
+                      ],
+                    ),
                   )
-                else
-                  for (final item in items) _itemTile(item),
-                const SizedBox(height: 16),
-                const Text('Add items',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted)),
-                const SizedBox(height: 4),
-                if (widget.menu.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('Menu unavailable — cannot add new items.',
-                        style:
-                            TextStyle(color: AppColors.muted, fontSize: 13)),
-                  )
-                else
-                  for (final menuItem in widget.menu) _addMenuItemRow(menuItem),
-              ],
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    itemCount: items.length,
+                    itemBuilder: (context, i) => _itemTile(items[i]),
+                  ),
+          ),
+          // ── Prominent "Add Items" navigation button ──
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.tonalIcon(
+                onPressed:
+                    (widget.menu.isEmpty || !_canEdit) ? null : _openAddItems,
+                icon: const Icon(Icons.add_shopping_cart),
+                label: const Text('ပစ္စည်းအသစ် ထည့်မည် (Add Items)'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.success.withOpacity(0.12),
+                  foregroundColor: AppColors.success,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
             ),
           ),
           // ── Total + save bar (all amounts in Kyat) ──
@@ -297,10 +429,28 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
+                  if (_canCheckout) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: (_saving || items.isEmpty) ? null : _checkout,
+                        icon: const Icon(Icons.payments_outlined),
+                        label: const Text('ငွေရှင်းမည် (Checkout)'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: appButton(
                       label: 'Save Changes',
-                      onPressed: (_saving || items.isEmpty) ? null : _save,
+                      onPressed: (_saving || items.isEmpty || !_canEdit)
+                          ? null
+                          : _save,
                     ),
                   ),
                 ],
@@ -329,7 +479,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(
-                    '${formatKyat(item.price)} × ${item.quantity} = '
+                    '${formatKyat(item.price)} x${item.quantity} = '
                     '${formatKyat(item.subtotal)}',
                     style:
                         const TextStyle(fontSize: 12, color: AppColors.muted),
@@ -339,7 +489,7 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
             ),
             _QtyButton(
               icon: Icons.remove_circle_outline,
-              onPressed: () => _changeQty(item, -1),
+              onPressed: _canEdit ? () => _changeQty(item, -1) : null,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -349,56 +499,13 @@ class _EditOrderScreenState extends State<EditOrderScreen> {
             ),
             _QtyButton(
               icon: Icons.add_circle_outline,
-              onPressed: () => _changeQty(item, 1),
+              onPressed: _canEdit ? () => _changeQty(item, 1) : null,
             ),
             IconButton(
               tooltip: 'Remove item',
               icon: const Icon(Icons.delete_outline,
                   size: 20, color: AppColors.error),
-              onPressed: () => _removeItem(item),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// One menu row in the "Add items" section with a `+` button.
-  Widget _addMenuItemRow(MenuItem menuItem) {
-    return InkWell(
-      onTap: () => _addItem(menuItem),
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                menuItem.name,
-                style: const TextStyle(fontSize: 14),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              formatKyat(menuItem.price),
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.muted),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: IconButton(
-                onPressed: () => _addItem(menuItem),
-                padding: EdgeInsets.zero,
-                splashRadius: 18,
-                tooltip: 'Add to order',
-                icon: const Icon(Icons.add, size: 20, color: AppColors.success),
-              ),
+              onPressed: _canEdit ? () => _removeItem(item) : null,
             ),
           ],
         ),
@@ -425,6 +532,154 @@ class _QtyButton extends StatelessWidget {
         splashRadius: 18,
         icon: Icon(icon, size: 22),
       ),
+    );
+  }
+}
+
+/// Outcome of a successful payment-dialog confirmation.
+class _PaymentResult {
+  const _PaymentResult({
+    required this.method,
+    required this.methodLabel,
+    this.received = 0,
+  });
+
+  /// Machine key sent to the server (e.g. `cash`, `kpay`).
+  final String method;
+
+  /// Human-readable method name for snackbars.
+  final String methodLabel;
+
+  /// Amount actually received in Kyat (cash only; 0 for digital methods).
+  final double received;
+}
+
+/// Payment / checkout dialog: choose a payment method (Cash, KPay, Wave Pay),
+/// enter the amount received for cash and see the change - all in Kyat.
+///
+/// Pops with a [_PaymentResult] when confirmed, or `null` when cancelled.
+class _PaymentDialog extends StatefulWidget {
+  const _PaymentDialog({required this.total});
+
+  /// Bill total to settle, in Kyat.
+  final double total;
+
+  @override
+  State<_PaymentDialog> createState() => _PaymentDialogState();
+}
+
+class _PaymentDialogState extends State<_PaymentDialog> {
+  static const List<({String id, String label, IconData icon})> _methods = [
+    (id: 'cash', label: 'ငွေသား (Cash)', icon: Icons.payments),
+    (id: 'kpay', label: 'KPay', icon: Icons.phone_android),
+    (id: 'wavepay', label: 'Wave Pay', icon: Icons.waves),
+  ];
+
+  String _method = 'cash';
+  final TextEditingController _receivedCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _receivedCtrl.dispose();
+    super.dispose();
+  }
+
+  double get _received => double.tryParse(_receivedCtrl.text.trim()) ?? 0;
+
+  double get _change => _received - widget.total;
+
+  bool get _canConfirm =>
+      _method != 'cash' || _received >= widget.total;
+
+  void _confirm() {
+    final label =
+        _methods.firstWhere((m) => m.id == _method, orElse: () => _methods.first).label;
+    Navigator.of(context).pop(_PaymentResult(
+      method: _method,
+      methodLabel: label,
+      received: _method == 'cash' ? _received : 0,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('ငွေရှင်းမည် (Checkout)'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Total to pay: ${formatKyat(widget.total)}',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            const Text('Payment method',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final m in _methods)
+                  ChoiceChip(
+                    label: Text(m.label),
+                    avatar: Icon(m.icon,
+                        size: 18,
+                        color: _method == m.id
+                            ? Colors.white
+                            : AppColors.primary),
+                    selected: _method == m.id,
+                    onSelected: (_) => setState(() => _method = m.id),
+                  ),
+              ],
+            ),
+            if (_method == 'cash') ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _receivedCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'ရယူသည့် ပမာဏ (Amount received, ${AppConstants.currency})',
+                  prefixIcon: Icon(Icons.payments_outlined),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _received <= 0
+                    ? 'Enter the amount received from the customer.'
+                    : _change >= 0
+                        ? 'ပြန်အမ်းငွေ (Change): ${formatKyat(_change)}'
+                        : 'Not enough - still owe ${formatKyat(-_change)}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _received <= 0 || _change >= 0
+                      ? AppColors.success
+                      : AppColors.error,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('မလုပ်တော့ပါ (Cancel)'),
+        ),
+        FilledButton.icon(
+          onPressed: _canConfirm ? _confirm : null,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('ငွေရှင်းပြီး (Confirm)'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.success,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
     );
   }
 }

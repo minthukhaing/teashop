@@ -91,7 +91,7 @@ class _KitchenDisplayScreenState extends State<KitchenDisplayScreen> {
               builder: (context, _) => Text(
                 _notifier.lastPoll != null
                     ? 'Updated ${DateFormat.Hm().format(_notifier.lastPoll!)}'
-                    : 'Connecting…',
+                    : 'Connecting...',
                 style: const TextStyle(fontSize: 13, color: AppColors.muted),
               ),
             ),
@@ -301,7 +301,7 @@ class _KitchenDisplayScreenState extends State<KitchenDisplayScreen> {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          Text('${item.quantity}×',
+          Text('${item.quantity}x',
               style: const TextStyle(
                   fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(width: 8),

@@ -36,7 +36,8 @@ class _FakeWaiterApi extends WaiterApiService {
   int updateStatusCallCount = 0;
 
   @override
-  Future<List<Order>> fetchOrders({String? status, String? since}) async {
+  Future<List<Order>> fetchOrders(
+      {String? status, String? since, bool unpaidOnly = false}) async {
     fetchOrdersCallCount++;
     final completer = fetchOrdersCompleter ?? Completer<void>();
     await completer.future;

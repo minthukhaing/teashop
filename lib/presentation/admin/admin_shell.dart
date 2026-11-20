@@ -12,13 +12,15 @@ import 'admin_menu_management.dart' show MenuManagementScreen;
 import 'admin_staff_management.dart';
 import 'admin_login_screen.dart';
 import '../../../core/auth/admin_auth.dart';
-import 'screens/admin_counter_screen.dart';
 import 'screens/admin_categories_screen.dart';
 import 'screens/admin_tables_screen.dart';
+import 'screens/admin_unpaid_tables_screen.dart';
 import 'screens/admin_payment_methods_screen.dart';
 import 'screens/admin_expenses_screen.dart';
 import 'screens/admin_reports_screen.dart';
 import 'screens/admin_income_expense_screen.dart';
+import 'screens/admin_shop_settings_screen.dart';
+import '../kitchen/kitchen_display.dart';
 
 // ──────────────────────────── Nav item model ─────────────────────────────────
 class _NavItem {
@@ -46,9 +48,9 @@ class _AdminShellState extends State<AdminShell> {
   final AppDatabase _db = AppDatabase.instance;
   late final AppServer _server;
   bool _serverRunning = false;
-  String _serverStatus = 'Starting…';
+  String _serverStatus = 'Starting...';
   int _selectedIndex = 0;
-  String _localIp = 'Resolving…';
+  String _localIp = 'Resolving...';
 
   // ── All navigation destinations ──────────────────────────────────────────
   static const List<_NavItem> _navItems = [
@@ -62,20 +64,21 @@ class _AdminShellState extends State<AdminShell> {
       label: 'Counter',
       emoji: '🖥️',
       icon: Icons.computer_outlined,
-      widget: AdminCounterScreen(),
+      widget: AdminUnpaidTablesScreen(),
     ),
     _NavItem(
       label: 'Kitchen',
       emoji: '👨‍🍳',
       icon: Icons.kitchen_outlined,
-      widget: _KitchenPlaceholder(),
+      widget: KitchenDisplayScreen(),
     ),
     _NavItem(
       label: 'Menu',
       emoji: '📋',
       icon: Icons.menu_book_outlined,
       widget: MenuManagementScreen(),
-    ),    _NavItem(
+    ),
+    _NavItem(
       label: 'Categories',
       emoji: '📁',
       icon: Icons.folder_outlined,
@@ -104,6 +107,12 @@ class _AdminShellState extends State<AdminShell> {
       emoji: '📈',
       icon: Icons.bar_chart_outlined,
       widget: AdminReportsScreen(),
+    ),
+    _NavItem(
+      label: 'Shop Settings',
+      emoji: '🏪',
+      icon: Icons.storefront_outlined,
+      widget: AdminShopSettingsScreen(),
     ),
     _NavItem(
       label: 'ဝင်ငွေ / ထွက်ငွေ',
@@ -362,7 +371,7 @@ class _AdminShellState extends State<AdminShell> {
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                         fontSize: 14)),
-                Text('$_localIp  •  $_serverStatus',
+                Text('$_localIp - $_serverStatus',
                     style: const TextStyle(
                         color: AdminColors.sidebarMuted, fontSize: 11),
                     overflow: TextOverflow.ellipsis,
@@ -593,25 +602,6 @@ class _AdminShellState extends State<AdminShell> {
 }
 
 // ──────────────────────── Kitchen placeholder ────────────────────────────────
-/// Placeholder widget — links through to the KDS in a real production build.
-class _KitchenPlaceholder extends StatelessWidget {
-  const _KitchenPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('👨‍🍳', style: TextStyle(fontSize: 64)),
-          SizedBox(height: 16),
-          Text('Kitchen Display',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text('Kitchen မှ KDS app ကို ဖွင့်ပါ',
-              style: TextStyle(color: AppColors.muted)),
-        ],
-      ),
-    );
-  }
-}
+// The Admin Shell's "Kitchen" tab now shows the real KitchenDisplayScreen
+// (imported above) instead of a placeholder, so the kitchen order tickets are
+// live inside the admin host itself.

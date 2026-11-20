@@ -14,15 +14,25 @@ class WaiterPermissions {
   static const String takeOrders = 'take_orders';
   static const String viewOrders = 'view_orders';
   static const String cancelOrders = 'cancel_orders';
+  static const String editOrders = 'edit_orders';
+  static const String processPayments = 'process_payments';
 
   /// All known keys, in display order.
-  static const List<String> all = [takeOrders, viewOrders, cancelOrders];
+  static const List<String> all = [
+    takeOrders,
+    viewOrders,
+    editOrders,
+    cancelOrders,
+    processPayments,
+  ];
 
   /// Human-readable label for a permission key.
   static String label(String key) => switch (key) {
         takeOrders => 'Take orders',
         viewOrders => 'View orders',
         cancelOrders => 'Cancel orders',
+        editOrders => 'Edit orders',
+        processPayments => 'Process payments',
         _ => key,
       };
 
@@ -31,11 +41,17 @@ class WaiterPermissions {
         takeOrders => 'Add items to the cart and send orders to the kitchen',
         viewOrders => 'See recent orders and their status',
         cancelOrders => 'Cancel an order before it is served',
+        editOrders => 'Change quantities, add or remove items on an unpaid order',
+        processPayments => 'Checkout: settle the bill (Cash / KPay) and mark it paid',
         _ => '',
       };
 
   /// Permissions granted to a brand-new waiter account by default.
-  static const List<String> defaultPermissions = [takeOrders, viewOrders];
+  static const List<String> defaultPermissions = [
+    takeOrders,
+    viewOrders,
+    editOrders,
+  ];
 
   /// Encodes a list of keys to a JSON array string for SQLite storage.
   static String encode(List<String> permissions) => jsonEncode(permissions);

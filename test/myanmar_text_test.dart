@@ -33,6 +33,22 @@ void main() {
       expect(MyanmarText.normalizeNullable(''), '');
     });
 
+    test('normalizeJson normalizes strings nested in maps and lists', () {
+      final decoded = MyanmarText.normalizeJson({
+        'name': 'A\u0300',
+        'items': [
+          {'label': 'လက်ဖက်ရည်', 'nested': ['E\u0301']},
+        ],
+        'count': 2,
+      }) as Map<String, dynamic>;
+      expect(decoded['name'], '\u00C0');
+      final items = decoded['items'] as List<dynamic>;
+      final first = items.first as Map<String, dynamic>;
+      expect(first['label'], 'လက်ဖက်ရည်');
+      expect((first['nested'] as List<dynamic>).single, '\u00C9');
+      expect(decoded['count'], 2);
+    });
+
     test('MenuItem toMap/fromMap round-trips as NFC', () {
       // The DB boundary must always store and return NFC text.
       final item = MenuItem(

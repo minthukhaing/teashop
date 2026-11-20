@@ -1,8 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Bluetooth Classic (SPP) thermal receipt printer support. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <!-- Android 12+ runtime permissions for connecting to paired printers. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <!-- Older Android versions require location access to use Bluetooth. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
     <application
         android:label="teashop_pos"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

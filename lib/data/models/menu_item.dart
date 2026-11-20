@@ -35,7 +35,7 @@ class MenuItem {
   /// Column-friendly map for SQLite (snake_case keys).
   ///
   /// All free-text fields are normalised to Unicode **NFC** so the database
-  /// stores one canonical form – required for correct Myanmar rendering
+  /// stores one canonical form -  - required for correct Myanmar rendering
   /// (Asat/Virama stacking) and reliable `LIKE` searches.
   Map<String, Object?> toMap() {
     return {

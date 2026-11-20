@@ -3,6 +3,7 @@ library teashop_pos.presentation.admin.screens.admin_expenses_screen;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../app_theme.dart';
+import '../../../core/constants/app_constants.dart';
 
 class _Expense {
   _Expense({
@@ -19,7 +20,7 @@ class _Expense {
   final String note;
 }
 
-/// Expenses screen – log and view business expenses.
+/// Expenses screen -  - log and view business expenses.
 class AdminExpensesScreen extends StatefulWidget {
   const AdminExpensesScreen({super.key});
 
@@ -57,7 +58,8 @@ class _AdminExpensesScreenState extends State<AdminExpensesScreen> {
                   controller: amountCtrl,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: 'ပမာဏ (ကျပ်)', prefixText: 'K '),
+                      labelText: 'ပမာဏ (${AppConstants.currency})',
+                      prefixText: '${AppConstants.currency} '),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -170,7 +172,7 @@ class _AdminExpensesScreenState extends State<AdminExpensesScreen> {
                   const Text('ယနေ့ ထွက်ငွေ စုစုပေါင်း',
                       style: TextStyle(color: Colors.white70, fontSize: 13)),
                   Text(
-                    'K ${_total.toStringAsFixed(0)}',
+                    formatKyat(_total),
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
@@ -218,11 +220,11 @@ class _AdminExpensesScreenState extends State<AdminExpensesScreen> {
                     title: Text(e.title,
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      '${_fmt.format(e.date)}${e.note.isNotEmpty ? '  •  ${e.note}' : ''}',
+                      '${_fmt.format(e.date)}${e.note.isNotEmpty ? ' - ${e.note}' : ''}',
                       style: const TextStyle(fontSize: 12, color: AppColors.muted),
                     ),
                     trailing: Text(
-                      'K ${e.amount.toStringAsFixed(0)}',
+                      formatKyat(e.amount),
                       style: const TextStyle(
                           color: AppColors.error,
                           fontWeight: FontWeight.bold,

@@ -2,6 +2,9 @@ library teashop_pos.presentation.admin.admin_login_screen;
 
 import 'package:flutter/material.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show MissingPluginException;
+
 import '../../core/auth/admin_auth.dart';
 import '../app_theme.dart';
 import '../common_widgets.dart';
@@ -42,15 +45,42 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     });
     // Brief delay so the loading state is visible and feels like a real check.
     await Future<void>.delayed(const Duration(milliseconds: 400));
-    final ok = await _auth.login(_userCtrl.text, _passCtrl.text);
-    if (!mounted) return;
-    if (ok) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AdminShell()),
-      );
-    } else {
+    try {
+      // Guard: Web platform doesn't support local SQLite/database operations.
+      if (kIsWeb) {
+        setState(() {
+          _error =
+              'Database operations are not supported on the web version. '
+              'Please run the Admin Host on Windows/macOS/Linux or an Android/iOS device.';
+          _loading = false;
+        });
+        return;
+      }
+      final ok = await _auth.login(_userCtrl.text, _passCtrl.text);
+      if (!mounted) return;
+      if (ok) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AdminShell()),
+        );
+      } else {
+        setState(() {
+          _error = 'Invalid username or password.';
+          _loading = false;
+        });
+      }
+    } on MissingPluginException catch (_) {
+      // Platform-specific plugin not available (e.g., path_provider on Web).
+      if (!mounted) return;
       setState(() {
-        _error = 'Invalid username or password.';
+        _error =
+            'Cannot access local database on this platform. '
+            'Please run the Admin Host on Windows/macOS/Linux or an Android/iOS device.';
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not sign in: $e';
         _loading = false;
       });
     }
@@ -80,7 +110,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   radius: 24,
                   elevation: 12,
                   padding: const EdgeInsets.all(28),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.15),
+                  ),
                   child: Form(
                     key: _formKey,
                     child: Column(
@@ -102,7 +134,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         const Text(
                           'Sign in to manage your teashop',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 14, color: AppColors.muted),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.muted,
+                          ),
                         ),
                         const SizedBox(height: 28),
                         TextFormField(
@@ -125,7 +160,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           autofillHints: const [AutofillHints.password],
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline,
+                              size: 20,
+                            ),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscure
@@ -137,8 +175,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                   setState(() => _obscure = !_obscure),
                             ),
                           ),
-                          validator: (v) =>
-                              (v == null || v.isEmpty) ? 'Enter password' : null,
+                          validator: (v) => (v == null || v.isEmpty)
+                              ? 'Enter password'
+                              : null,
                           onFieldSubmitted: (_) => _submit(),
                         ),
                         if (_error != null) ...[
@@ -146,7 +185,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           Text(
                             _error!,
                             style: const TextStyle(
-                                color: AppColors.error, fontSize: 13),
+                              color: AppColors.error,
+                              fontSize: 13,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -165,14 +206,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           ),
                           child: const Row(
                             children: [
-                              Icon(Icons.info_outline,
-                                  size: 16, color: AppColors.muted),
+                              Icon(
+                                Icons.info_outline,
+                                size: 16,
+                                color: AppColors.muted,
+                              ),
                               SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Default credentials: admin / admin123',
                                   style: TextStyle(
-                                      fontSize: 12, color: AppColors.muted),
+                                    fontSize: 12,
+                                    color: AppColors.muted,
+                                  ),
                                 ),
                               ),
                             ],

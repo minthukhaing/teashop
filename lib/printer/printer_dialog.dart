@@ -120,8 +120,8 @@ class _PrinterDialogState extends State<PrinterDialog> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Receipt printed successfully'),
+          SnackBar(
+            content: Text('Receipt printed successfully ($count bytes)'),
             backgroundColor: Colors.green,
           ),
         );
@@ -210,7 +210,7 @@ class _PrinterDialogState extends State<PrinterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Print Receipt — Bluetooth Printer'),
+      title: const Text('Print Receipt - Bluetooth Printer'),
       content: _buildContent(),
       actions: [
         FilledButton(

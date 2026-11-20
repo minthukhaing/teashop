@@ -4,6 +4,58 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 
+class MenuItemNamePriceRow extends StatelessWidget {
+  const MenuItemNamePriceRow({
+    super.key,
+    required this.name,
+    required this.price,
+    this.nameStyle,
+    this.priceStyle,
+    this.gap = 12,
+  });
+
+  final String name;
+  final double price;
+  final TextStyle? nameStyle;
+  final TextStyle? priceStyle;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle ??
+                AppFonts.style(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+        ),
+        SizedBox(width: gap),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              formatKyat(price),
+              maxLines: 1,
+              style: priceStyle ??
+                  AppFonts.style(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.success,
+                  ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Styled text input with a label and optional prefix icon.
 Widget appTextField({
   required BuildContext context,
@@ -113,6 +165,7 @@ Widget statusChip(String status) {
     'ready' => AppColors.success,
     'served' => Colors.teal,
     'cancelled' => AppColors.error,
+    'paid' => Colors.green,
     _ => AppColors.muted,
   };
   final String label = switch (status) {
@@ -121,6 +174,7 @@ Widget statusChip(String status) {
     'ready' => 'Ready',
     'served' => 'Served',
     'cancelled' => 'Cancelled',
+    'paid' => 'Paid',
     _ => status,
   };
   return Container(

@@ -13,9 +13,9 @@ import 'app_theme.dart';
 enum Breakpoint {
   /// Phones in portrait (< 600 dp).
   compact,
-  /// Small tablets / large phones (600–839 dp).
+  /// Small tablets / large phones (600 -  - 839 dp).
   medium,
-  /// Tablets in landscape / small desktops (840–1199 dp).
+  /// Tablets in landscape / small desktops (840 -  - 1199 dp).
   expanded,
   /// Desktops / admin displays (>= 1200 dp).
   large,

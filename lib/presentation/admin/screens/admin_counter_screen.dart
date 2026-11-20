@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import '../../app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/order.dart';
+import '../../voucher_screen.dart';
 import 'package:intl/intl.dart';
 
-/// Counter screen – shows active orders that can be served / cancelled.
+/// Counter screen -  - shows active orders that can be served / cancelled.
 class AdminCounterScreen extends StatefulWidget {
   const AdminCounterScreen({super.key});
 
@@ -47,6 +48,15 @@ class _AdminCounterScreenState extends State<AdminCounterScreen> {
   Future<void> _updateStatus(Order order, String newStatus) async {
     await _db.updateOrderStatus(order.id!, newStatus);
     await _load();
+  }
+
+  /// Opens the voucher/bill preview for [order] using the shop settings.
+  Future<void> _openVoucher(Order order) async {
+    final settings = await _db.getShopSettings();
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => VoucherScreen(order: order, settings: settings),
+    ));
   }
 
   @override
@@ -123,7 +133,7 @@ class _AdminCounterScreenState extends State<AdminCounterScreen> {
                       Text('စားပွဲ ${order.tableNumber}',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       Text(
-                        '${order.createdAt != null ? _fmt.format(order.createdAt!) : "--:--"}  •  ${order.itemCount} items  •  ${formatMoney(order.total)}',
+                        '${order.createdAt != null ? _fmt.format(order.createdAt!) : "--:--"} - ${order.itemCount} items - ${formatMoney(order.total)}',
                         style: const TextStyle(fontSize: 12, color: AppColors.muted),
                       ),
                     ],
@@ -148,6 +158,19 @@ class _AdminCounterScreenState extends State<AdminCounterScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AdminColors.sidebarBg,
+                    side: BorderSide(
+                        color: AdminColors.sidebarBg.withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                  label: const Text('Voucher', style: TextStyle(fontSize: 13)),
+                  onPressed: () => _openVoucher(order),
+                ),
+                const SizedBox(width: 8),
                 if (order.status != 'ready')
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(

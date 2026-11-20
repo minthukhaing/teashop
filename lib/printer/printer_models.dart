@@ -4,6 +4,7 @@ library teashop_pos.printer.models;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../core/constants/app_constants.dart';
 import '../../data/models/order.dart';
 
 /// A discovered nearby Bluetooth printer device.
@@ -93,7 +94,7 @@ class ReceiptBuilder {
   }
 
   static void addSeparator() {
-    _lines.add(PrinterCommandText('—' * 32));
+    _lines.add(PrinterCommandText(' - ' * 32));
   }
 
   static void addHeading(String heading) {
@@ -111,7 +112,15 @@ class ReceiptBuilder {
     _lines.add(PrinterCommandText('$label ${_formatMoney(amount)}'));
   }
 
-  static String _formatMoney(double amount) => '\$${amount.toStringAsFixed(2)}';
+  /// Feeds three blank lines then issues a full paper cut (GS V m=0).
+  static void addCut() {
+    _lines.add(const PrinterCommandLineFeed(3));
+    _lines.add(const PrinterCommandCut());
+  }
+
+  /// Money is always denoted with the Kyat unit "ကျပ်".
+  static String _formatMoney(double amount) =>
+      '${amount.toStringAsFixed(0)} ${AppConstants.currency}';
 
   static Uint8List buildPayload(Order order) {
     begin();
@@ -133,9 +142,17 @@ class ReceiptBuilder {
     addHeading('Total');
     addAmount('Total', order.total);
     addBlank();
+    addBlank();
 
-    _lines.add(const PrinterCommandCut());
+    // Feed a little before cutting so the total is not on the tear line.
+    // ESC/POS paper cut: GS V m=0 (full cut).
+    addCut();
 
+    return serialize();
+  }
+
+  /// Serializes the commands accumulated since [begin] into ESC/POS bytes.
+  static Uint8List serialize() {
     final sb = StringBuffer();
     for (final command in _lines) {
       if (command is PrinterCommandText) {
@@ -144,7 +161,8 @@ class ReceiptBuilder {
       } else if (command is PrinterCommandFeed) {
         sb.write('\n');
       } else if (command is PrinterCommandCut) {
-        sb.write('\x0C');
+        // ESC/POS: GS V m=0 - full cut at the current position.
+        sb.write('\x1D\x56\x00');
       } else if (command is PrinterCommandFontScale) {
         sb.write('\x1B\x33${command.scale + 1}\x00');
       } else if (command is PrinterCommandBold) {

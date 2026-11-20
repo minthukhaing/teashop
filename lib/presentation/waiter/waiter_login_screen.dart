@@ -1,8 +1,6 @@
 library teashop_pos.presentation.waiter.waiter_login_screen;
 
 import 'package:flutter/material.dart';
-
-import '../../client/waiter_api_service.dart';
 import '../../core/auth/waiter_auth.dart';
 import '../../core/constants/app_constants.dart';
 import '../app_mode.dart';

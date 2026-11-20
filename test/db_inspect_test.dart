@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:teashop_pos/core/constants/app_constants.dart';
 import 'package:teashop_pos/data/database/app_database.dart';
 
 /// Fake path_provider that points the database at a temp directory so the test
@@ -51,7 +52,7 @@ void main() {
     print('\n========== MENU ITEMS (${menu.length}) ==========');
     for (final m in menu) {
       print('  #${m.id} | ${m.name} | ${m.category} | '
-          '\$${m.price.toStringAsFixed(2)} | available=${m.available}'
+          '${m.price.toStringAsFixed(2)} ${AppConstants.currency} | available=${m.available}'
           '${m.description != null ? ' | ${m.description}' : ''}');
     }
 
@@ -59,10 +60,11 @@ void main() {
     print('\n========== ORDERS (${orders.length}) ==========');
     for (final o in orders) {
       print('  #${o.id} | table=${o.tableNumber} | status=${o.status} | '
-          'total=\$${o.total.toStringAsFixed(2)} | items=${o.items.length}'
+          'total=${o.total.toStringAsFixed(2)} ${AppConstants.currency} | items=${o.items.length}'
           '${o.customerName != null ? ' | customer=${o.customerName}' : ''}');
       for (final it in o.items) {
-        print('      - ${it.name} x${it.quantity} @ \$${it.price.toStringAsFixed(2)}');
+        print('      - ${it.name} x${it.quantity} @ '
+            '${it.price.toStringAsFixed(2)} ${AppConstants.currency}');
       }
     }
 

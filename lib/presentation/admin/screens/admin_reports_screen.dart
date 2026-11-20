@@ -6,7 +6,7 @@ import '../../app_theme.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/models/order.dart';
 
-/// Reports screen – daily/summary sales reports.
+/// Reports screen -  - daily/summary sales reports.
 class AdminReportsScreen extends StatefulWidget {
   const AdminReportsScreen({super.key});
 
@@ -217,7 +217,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'စားပွဲ ${order.tableNumber}  •  ${order.itemCount} items',
+              'စားပွဲ ${order.tableNumber} - ${order.itemCount} items',
               style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),

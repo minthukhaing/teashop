@@ -61,8 +61,9 @@ class AppConfig {
   }
 
   /// Fetches the list of orders from the Admin Host.
-  Future<List<Order>> getOrders({String? status, String? since}) async {
-    return api.fetchOrders(status: status, since: since);
+  Future<List<Order>> getOrders(
+      {String? status, String? since, bool unpaidOnly = false}) async {
+    return api.fetchOrders(status: status, since: since, unpaidOnly: unpaidOnly);
   }
 }
 

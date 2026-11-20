@@ -10,6 +10,8 @@ import '../core/constants/app_constants.dart';
 import '../data/database/app_database.dart';
 import 'handlers/menu_handler.dart';
 import 'handlers/order_handler.dart';
+import 'handlers/settings_handler.dart';
+import 'handlers/tables_handler.dart';
 import 'handlers/auth_handler.dart';
 import 'server_utils.dart';
 
@@ -21,10 +23,14 @@ class AppServer {
   AppServer.withDb(AppDatabase database)
       : _menu = MenuHandler(database),
         _orders = OrderHandler(database),
+        _settings = SettingsHandler(database),
+        _tables = TablesHandler(database),
         _auth = AuthHandler(database);
 
   final MenuHandler _menu;
   final OrderHandler _orders;
+  final SettingsHandler _settings;
+  final TablesHandler _tables;
   final AuthHandler _auth;
 
   HttpServer? _httpServer;
@@ -90,9 +96,37 @@ class AppServer {
       '${AppConstants.apiPrefix}${AppConstants.ordersEndpoint}/<id>',
       _orders.updateOrderStatus,
     );
+    _router.put(
+      '${AppConstants.apiPrefix}${AppConstants.ordersEndpoint}/<id>',
+      _orders.updateOrder,
+    );
+    _router.delete(
+      '${AppConstants.apiPrefix}${AppConstants.ordersEndpoint}/<id>',
+      _orders.deleteOrder,
+    );
     _router.post(
       '${AppConstants.apiPrefix}${AppConstants.authEndpoint}/login',
       _auth.login,
+    );
+    _router.get(
+      '${AppConstants.apiPrefix}${AppConstants.settingsEndpoint}',
+      _settings.getSettings,
+    );
+    _router.put(
+      '${AppConstants.apiPrefix}${AppConstants.settingsEndpoint}',
+      _settings.updateSettings,
+    );
+    _router.get(
+      '${AppConstants.apiPrefix}${AppConstants.tablesEndpoint}',
+      _tables.getTables,
+    );
+    _router.post(
+      '${AppConstants.apiPrefix}${AppConstants.tablesEndpoint}',
+      _tables.createTable,
+    );
+    _router.delete(
+      '${AppConstants.apiPrefix}${AppConstants.tablesEndpoint}/<id>',
+      _tables.deleteTable,
     );
 
     _httpServer = await HttpServer.bind(address, port);
