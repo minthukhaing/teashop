@@ -1,11 +1,13 @@
 library teashop_pos.core.constants;
 
-import 'dart:io';
-
 /// Central constants for the Teashop POS application.
 ///
 /// Keeps network ports, API paths, database settings and order statuses in one
 /// place so the Admin Host, Waiter client and Kitchen Display stay consistent.
+///
+/// Note: This file is intentionally free of `dart:io` imports so it compiles on
+/// web.  The [serverBindAddress] was moved to `app_server.dart` where `dart:io`
+/// is already required.
 class AppConstants {
   AppConstants._();
 

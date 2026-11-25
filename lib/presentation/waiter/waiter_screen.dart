@@ -1,5 +1,7 @@
 library teashop_pos.presentation.waiter.waiter_screen;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/auth/waiter_auth.dart';
@@ -415,10 +417,17 @@ class _WaiterScreenState extends State<WaiterScreen> {
     );
     try {
       await AppConfig.instance.api.submitOrder(order);
-      setState(() => _cart.clear());
-      // Immediately reload orders so Orders screen and Tables reflect it in real time
+      setState(() {
+        _cart.clear();
+        _itemQuantities.clear();
+      });
+      // Immediately reload orders so the Orders tab and Tables grid reflect the
+      // new order in real time — no need to wait for the next poll cycle.
       await _loadOrders(silent: true);
       if (!mounted) return;
+      // Auto-switch to the Orders tab so the waiter immediately sees the new
+      // order appear on the unpaid orders list.
+      setState(() => _currentIndex = 2);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Order sent to kitchen!')),
       );
@@ -792,8 +801,7 @@ class _WaiterScreenState extends State<WaiterScreen> {
                         Navigator.of(sheetContext).pop();
                         setState(() {
                           _selectedTable = table;
-                          _isParcelMode = false;
-                          _currentIndex = 1; // jump to Menu
+                          _currentIndex = 1; // jump to Menu (not parcel)
                         });
                       },
                     ),

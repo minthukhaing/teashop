@@ -1,5 +1,6 @@
 library teashop_pos.presentation.role_selection_screen;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'admin/admin_login_screen.dart';
@@ -53,14 +54,17 @@ class RoleSelectionScreen extends StatelessWidget {
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           children: [
-                            _RoleCard(
-                              title: 'Admin Host',
-                              description:
-                                  'Embedded SQLite DB + live HTTP server on :8080',
-                              icon: Icons.computer,
-                              color: AppColors.primary,
-                              role: AppMode.admin,
-                            ),
+                            // Admin Host requires local SQLite + dart:io
+                            // HTTP server — only available on native platforms.
+                            if (!kIsWeb)
+                              _RoleCard(
+                                title: 'Admin Host',
+                                description:
+                                    'Embedded SQLite DB + live HTTP server on :8080',
+                                icon: Icons.computer,
+                                color: AppColors.primary,
+                                role: AppMode.admin,
+                              ),
                             _RoleCard(
                               title: 'Waiter',
                               description:
@@ -68,6 +72,14 @@ class RoleSelectionScreen extends StatelessWidget {
                               icon: Icons.point_of_sale,
                               color: AppColors.accent,
                               role: AppMode.waiter,
+                            ),
+                            _RoleCard(
+                              title: 'Kitchen Display',
+                              description:
+                                  'View incoming orders from the kitchen',
+                              icon: Icons.soup_kitchen,
+                              color: AppColors.success,
+                              role: AppMode.kitchen,
                             ),
                           ],
                         ),
